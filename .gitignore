@@ -5,7 +5,11 @@ frontend/out/
 frontend/build/
 frontend/*.tsbuildinfo
 frontend/next-env.d.ts
-frontend/.env*
+frontend/.env*.local
+frontend/.env.local
+!frontend/.env.production
+!frontend/.env.development
+!frontend/.env.example
 frontend/.vercel/
 
 # Backend dependencies and cache

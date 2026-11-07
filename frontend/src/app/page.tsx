@@ -11,7 +11,8 @@ import {
   MarketStatus, 
   StockDetail, 
   ChartDataPoint,
-  WS_BASE
+  WS_BASE,
+  getWsBase
 } from "../utils/api";
 
 import DashboardHeader from "../components/DashboardHeader";
@@ -81,50 +82,61 @@ export default function Home() {
 
   // Connect to WebSocket streaming
   useEffect(() => {
-    // Instantiate WebSocket connection
-    const ws = new WebSocket(`${WS_BASE}/ws/live`);
-    wsRef.current = ws;
+    let ws: WebSocket | null = null;
+    try {
+      const wsUrl = getWsBase();
+      ws = new WebSocket(`${wsUrl}/ws/live`);
+      wsRef.current = ws;
 
-    ws.onopen = () => {
-      console.log("WebSocket connected. Subscribing to:", selectedTicker);
-      ws.send(JSON.stringify({ subscribe: selectedTicker }));
-    };
+      ws.onopen = () => {
+        console.log("WebSocket connected. Subscribing to:", selectedTicker);
+        ws?.send(JSON.stringify({ subscribe: selectedTicker }));
+      };
 
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.ticker === selectedTicker) {
-        // 1. Update prices in list and details dynamically
-        setStocks((prev) => 
-          prev.map((s) => 
-            s.ticker === data.ticker 
-              ? { ...s, price: data.simulated_price } 
-              : s
-          )
-        );
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.ticker === selectedTicker) {
+            // 1. Update prices in list and details dynamically
+            setStocks((prev) => 
+              prev.map((s) => 
+                s.ticker === data.ticker 
+                  ? { ...s, price: data.simulated_price } 
+                  : s
+              )
+            );
 
-        if (detail && detail.ticker === data.ticker) {
-          // Adjust master score dynamically if ticked
-          setDetail((prev) => prev ? { ...prev, master_score: data.master_score, recommendation: data.recommendation } : null);
+            if (detail && detail.ticker === data.ticker) {
+              // Adjust master score dynamically if ticked
+              setDetail((prev) => prev ? { ...prev, master_score: data.master_score, recommendation: data.recommendation } : null);
+            }
+
+            // 2. Append new streaming log lines
+            setTerminalLogs((prev) => {
+              const combined = [...prev, ...data.agent_logs];
+              return combined.slice(-60); // limit to last 60 entries
+            });
+          }
+        } catch (err) {
+          console.error("Error processing WebSocket message:", err);
         }
+      };
 
-        // 2. Append new streaming log lines
-        setTerminalLogs((prev) => {
-          const combined = [...prev, ...data.agent_logs];
-          return combined.slice(-60); // limit to last 60 entries
-        });
-      }
-    };
+      ws.onerror = (e) => {
+        console.warn("WebSocket disconnected or unsupported:", e);
+      };
 
-    ws.onclose = () => {
-      console.log("WebSocket closed. Reconnecting in 3s...");
-      setTimeout(() => {
-        // Reconnection trigger
-        setSelectedTicker((prev) => prev);
-      }, 3000);
-    };
+      ws.onclose = () => {
+        console.log("WebSocket connection closed.");
+      };
+    } catch (err) {
+      console.warn("WebSocket connection could not be established:", err);
+    }
 
     return () => {
-      ws.close();
+      if (ws) {
+        ws.close();
+      }
     };
   }, [selectedTicker]);
 

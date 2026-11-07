@@ -1,5 +1,40 @@
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
-export const WS_BASE = process.env.NEXT_PUBLIC_WS_BASE || "ws://localhost:8000";
+const PRODUCTION_API_URL = "https://vanguard-stocks-backend.vercel.app";
+const PRODUCTION_WS_URL = "wss://vanguard-stocks-backend.vercel.app";
+
+export function getApiBase(): string {
+  if (process.env.NEXT_PUBLIC_API_BASE) {
+    return process.env.NEXT_PUBLIC_API_BASE.replace(/\/+$/, "");
+  }
+  if (typeof window !== "undefined") {
+    const hostname = window.location.hostname;
+    if (hostname !== "localhost" && hostname !== "127.0.0.1") {
+      return PRODUCTION_API_URL;
+    }
+  }
+  if (process.env.NODE_ENV === "production") {
+    return PRODUCTION_API_URL;
+  }
+  return "http://localhost:8000";
+}
+
+export function getWsBase(): string {
+  if (process.env.NEXT_PUBLIC_WS_BASE) {
+    return process.env.NEXT_PUBLIC_WS_BASE.replace(/\/+$/, "");
+  }
+  if (typeof window !== "undefined") {
+    const hostname = window.location.hostname;
+    if (hostname !== "localhost" && hostname !== "127.0.0.1") {
+      return PRODUCTION_WS_URL;
+    }
+  }
+  if (process.env.NODE_ENV === "production") {
+    return PRODUCTION_WS_URL;
+  }
+  return "ws://localhost:8000";
+}
+
+export const API_BASE = getApiBase();
+export const WS_BASE = getWsBase();
 
 export interface StockOverview {
   ticker: string;
@@ -91,22 +126,22 @@ export interface ChartDataPoint {
 }
 
 export async function fetchMarketStatus(): Promise<MarketStatus> {
-  const res = await fetch(`${API_BASE}/api/market-status`);
+  const res = await fetch(`${getApiBase()}/api/market-status`);
   return res.json();
 }
 
 export async function fetchStocks(): Promise<StockOverview[]> {
-  const res = await fetch(`${API_BASE}/api/stocks`);
+  const res = await fetch(`${getApiBase()}/api/stocks`);
   return res.json();
 }
 
 export async function fetchStockDetail(ticker: string): Promise<StockDetail> {
-  const res = await fetch(`${API_BASE}/api/stocks/${ticker}`);
+  const res = await fetch(`${getApiBase()}/api/stocks/${ticker}`);
   return res.json();
 }
 
 export async function fetchStockChart(ticker: string, interval: string): Promise<ChartDataPoint[]> {
-  const res = await fetch(`${API_BASE}/api/stocks/${ticker}/chart?interval=${interval}`);
+  const res = await fetch(`${getApiBase()}/api/stocks/${ticker}/chart?interval=${interval}`);
   return res.json();
 }
 
@@ -114,7 +149,7 @@ export async function applyOverride(vix: number | null, nasdaqRet: number | null
   const body: Record<string, any> = {};
   if (vix !== null) body.vix = vix;
   if (nasdaqRet !== null) body.nasdaq_ret = nasdaqRet;
-  const res = await fetch(`${API_BASE}/api/admin/override`, {
+  const res = await fetch(`${getApiBase()}/api/admin/override`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
@@ -123,14 +158,14 @@ export async function applyOverride(vix: number | null, nasdaqRet: number | null
 }
 
 export async function resetOverride() {
-  const res = await fetch(`${API_BASE}/api/admin/reset-override`, {
+  const res = await fetch(`${getApiBase()}/api/admin/reset-override`, {
     method: "POST"
   });
   return res.json();
 }
 
 export async function injectNews(ticker: string, headline: string, sentiment: number) {
-  const res = await fetch(`${API_BASE}/api/admin/inject-news`, {
+  const res = await fetch(`${getApiBase()}/api/admin/inject-news`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ticker, headline, sentiment })
@@ -189,7 +224,7 @@ export interface BTSTData {
 }
 
 export async function fetchBTSTData(): Promise<BTSTData> {
-  const res = await fetch(`${API_BASE}/api/btst`);
+  const res = await fetch(`${getApiBase()}/api/btst`);
   if (!res.ok) throw new Error("Failed to fetch BTST data");
   return res.json();
 }
@@ -318,13 +353,13 @@ export interface FuturesDetail {
 }
 
 export async function fetchFuturesOpportunities(): Promise<FuturesOpportunity[]> {
-  const res = await fetch(`${API_BASE}/api/futures-income/opportunities`);
+  const res = await fetch(`${getApiBase()}/api/futures-income/opportunities`);
   if (!res.ok) throw new Error("Failed to fetch futures opportunities");
   return res.json();
 }
 
 export async function fetchFuturesDetail(ticker: string): Promise<FuturesDetail> {
-  const res = await fetch(`${API_BASE}/api/futures-income/detail/${ticker}`);
+  const res = await fetch(`${getApiBase()}/api/futures-income/detail/${ticker}`);
   if (!res.ok) throw new Error("Failed to fetch futures detail");
   return res.json();
 }
@@ -358,7 +393,7 @@ export interface ShortTermPicksResponse {
 }
 
 export async function fetchShortTermPicks(): Promise<ShortTermPicksResponse> {
-  const res = await fetch(`${API_BASE}/api/short-term-picks`);
+  const res = await fetch(`${getApiBase()}/api/short-term-picks`);
   if (!res.ok) throw new Error("Failed to fetch short term picks");
   return res.json();
 }
@@ -422,7 +457,7 @@ export interface MultiBaggerResponse {
 }
 
 export async function fetchMultiBaggerPicks(): Promise<MultiBaggerResponse> {
-  const res = await fetch(`${API_BASE}/api/multibagger-picks`);
+  const res = await fetch(`${getApiBase()}/api/multibagger-picks`);
   if (!res.ok) throw new Error("Failed to fetch multi-bagger picks");
   return res.json();
 }
@@ -473,7 +508,7 @@ export interface PortfolioResponse {
 }
 
 export async function fetchGeneratedPortfolio(amount: number, style: string): Promise<PortfolioResponse> {
-  const res = await fetch(`${API_BASE}/api/portfolio/generate?amount=${amount}&style=${style}`);
+  const res = await fetch(`${getApiBase()}/api/portfolio/generate?amount=${amount}&style=${style}`);
   if (!res.ok) throw new Error("Failed to fetch optimized portfolio");
   return res.json();
 }

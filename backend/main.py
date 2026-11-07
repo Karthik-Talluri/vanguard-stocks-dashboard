@@ -25,14 +25,43 @@ BTST_CACHE_LOCK = threading.Lock()
 
 app = FastAPI(title="VanguardScore Backend API")
 
-# Enable CORS for Next.js frontend
+# Enable CORS for Next.js frontend and production deployments
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://vanguard-stocks-frontend.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:3000",
+        "*",
+    ],
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/")
+def read_root():
+    return {
+        "status": "online",
+        "service": "VanguardScore Backend API",
+        "version": "1.0.0",
+        "endpoints": [
+            "/api/market-status",
+            "/api/stocks",
+            "/api/btst",
+            "/api/futures-income/opportunities",
+            "/api/short-term-picks",
+            "/api/multibagger-picks",
+            "/api/health"
+        ]
+    }
+
+@app.get("/health")
+@app.get("/api/health")
+def health_check():
+    return {"status": "healthy"}
 
 DATA_DIR = "data"
 engine = MasterScoringEngine()
