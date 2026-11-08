@@ -12,8 +12,11 @@ ROOT_DATA_DIR = os.path.join(os.path.dirname(BACKEND_DIR), "data")
 
 def save_csv(df: pd.DataFrame, filename: str):
     """Saves dataframe to both backend/data and root data directories."""
-    p1 = os.path.join(DATA_DIR, filename)
-    df.to_csv(p1, index=False)
+    try:
+        p1 = os.path.join(DATA_DIR, filename)
+        df.to_csv(p1, index=False)
+    except Exception as e:
+        print(f"Notice: read-only or permission restriction writing {filename} to {DATA_DIR}: {e}")
     if os.path.exists(ROOT_DATA_DIR) and os.path.abspath(ROOT_DATA_DIR) != os.path.abspath(DATA_DIR):
         try:
             p2 = os.path.join(ROOT_DATA_DIR, filename)
@@ -21,8 +24,11 @@ def save_csv(df: pd.DataFrame, filename: str):
         except Exception:
             pass
 
-# Ensure output directory exists
-os.makedirs(DATA_DIR, exist_ok=True)
+# Ensure output directory exists (gracefully handle read-only serverless filesystems)
+try:
+    os.makedirs(DATA_DIR, exist_ok=True)
+except Exception:
+    pass
 
 # Sector and index tickers on Yahoo Finance
 SECTOR_TICKERS = {
