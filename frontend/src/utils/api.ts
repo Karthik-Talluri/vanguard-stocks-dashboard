@@ -57,10 +57,26 @@ export interface MarketStatus {
   vix: number;
   nifty_close: number;
   nifty_change: number;
+  nifty_prev_close?: number;
+  nifty_change_abs?: number;
+  nifty_open?: number;
+  nifty_high?: number;
+  nifty_low?: number;
+  vix_prev_close?: number;
+  vix_change?: number;
   sp500: number;
   nasdaq: number;
   dxy: number;
   us10y: number;
+  last_updated?: string;
+  last_updated_formatted?: string;
+  last_trading_session?: string;
+  is_market_open?: boolean;
+  market_status?: "OPEN" | "CLOSED" | "PRE_MARKET";
+  session_type?: string;
+  market_session_message?: string;
+  is_stale?: boolean;
+  warning?: string;
   reasoning: string[];
 }
 
@@ -126,12 +142,30 @@ export interface ChartDataPoint {
 }
 
 export async function fetchMarketStatus(): Promise<MarketStatus> {
-  const res = await fetch(`${getApiBase()}/api/market-status`);
+  const res = await fetch(`${getApiBase()}/api/market-status`, {
+    cache: "no-store",
+    headers: {
+      "Cache-Control": "no-cache",
+      "Pragma": "no-cache"
+    }
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch market status (${res.status})`);
+  }
   return res.json();
 }
 
 export async function fetchStocks(): Promise<StockOverview[]> {
-  const res = await fetch(`${getApiBase()}/api/stocks`);
+  const res = await fetch(`${getApiBase()}/api/stocks`, {
+    cache: "no-store",
+    headers: {
+      "Cache-Control": "no-cache",
+      "Pragma": "no-cache"
+    }
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch stocks (${res.status})`);
+  }
   return res.json();
 }
 

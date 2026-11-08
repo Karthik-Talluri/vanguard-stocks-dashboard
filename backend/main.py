@@ -4,7 +4,7 @@ import random
 import pandas as pd
 import threading
 from typing import Dict, Any, List
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -15,6 +15,7 @@ from yfinance_engine import run_full_sync
 from agents.btst_engine import calculate_btst_metrics
 from futures_income_engine import FuturesIncomeEngine
 from nifty250_scanner import get_nifty250_multibaggers, perform_nifty250_scan
+from market_service import get_live_market_data, get_market_hours_status
 
 # BTST cache variables
 BTST_CACHE = None
@@ -103,9 +104,9 @@ mock_overrides = {
 LIVE_PRICE_CACHE = {}
 LIVE_PRICE_CACHE_TTL = 10.0
 
-# In-memory cache for stock analysis results to prevent CPU bottleneck (300s TTL)
+# In-memory cache for stock analysis results to prevent CPU bottleneck (30s TTL)
 ANALYSIS_CACHE = {}
-ANALYSIS_CACHE_TTL = 300.0
+ANALYSIS_CACHE_TTL = 30.0
 
 def load_data_for_ticker(ticker: str, force_live: bool = False, calculate_inds: bool = True) -> Dict[str, pd.DataFrame]:
     """
@@ -162,6 +163,25 @@ def load_data_for_ticker(ticker: str, force_live: bool = False, calculate_inds: 
         stock_daily.loc[latest_idx, "Close"] = live_price
         if live_volume is not None and not np.isnan(live_volume):
             stock_daily.loc[latest_idx, "Volume"] = live_volume
+
+    # Sync latest live NIFTY and Macro indices if available
+    try:
+        live_mkt = get_live_market_data()
+        if not nifty_sectors.empty and "Nifty50" in nifty_sectors.columns:
+            nifty_sectors.loc[nifty_sectors.index[-1], "Nifty50"] = live_mkt["nifty_close"]
+        if not macro_indices.empty:
+            if "IndiaVIX" in macro_indices.columns:
+                macro_indices.loc[macro_indices.index[-1], "IndiaVIX"] = live_mkt["vix"]
+            if "NASDAQ" in macro_indices.columns:
+                macro_indices.loc[macro_indices.index[-1], "NASDAQ"] = live_mkt["nasdaq"]
+            if "SP500" in macro_indices.columns:
+                macro_indices.loc[macro_indices.index[-1], "SP500"] = live_mkt["sp500"]
+            if "DXY" in macro_indices.columns:
+                macro_indices.loc[macro_indices.index[-1], "DXY"] = live_mkt["dxy"]
+            if "US10Y" in macro_indices.columns:
+                macro_indices.loc[macro_indices.index[-1], "US10Y"] = live_mkt["us10y"]
+    except Exception as e:
+        pass
     
     # Apply mocks if overridden
     if mock_overrides["IndiaVIX"] is not None:
@@ -291,45 +311,61 @@ def inject_news(req: NewsTriggerRequest):
     return {"status": "error", "message": "News feed CSV not found"}
 
 @app.get("/api/market-status")
-def get_market_status():
+def get_market_status(response: Response = None):
     """
-    Returns index performance, VIX, and regime details.
+    Returns live index performance, VIX, regime details, and market hours status.
+    Uses Yahoo Finance live feed with fallback and cache revalidation headers.
     """
-    # Load raw data for first stock to get index details
-    data = load_data_for_ticker("RELIANCE")
-    nifty = data["nifty_sectors"]
-    macro = data["macro_indices"]
+    # 1. Fetch live market data (with cache)
+    live_data = get_live_market_data()
     
-    # Calculate regime
-    regime_res = engine.regime_detector.detect(nifty, macro)
+    # 2. Check for manual regime simulation overrides
+    effective_vix = mock_overrides["IndiaVIX"] if mock_overrides["IndiaVIX"] is not None else live_data["vix"]
+    effective_nasdaq = live_data["nasdaq"]
+    if mock_overrides["NASDAQ_5d_ret"] is not None:
+        effective_nasdaq = live_data["nasdaq"] * (1 + mock_overrides["NASDAQ_5d_ret"])
+        
+    # 3. Determine regime based on live or simulated conditions
+    regime = "SIDEWAYS"
+    reasoning = []
     
-    nifty_close = nifty["Nifty50"].iloc[-1]
-    nifty_prev = nifty["Nifty50"].iloc[-2]
-    nifty_chg = (nifty_close - nifty_prev) / nifty_prev * 100
-    
-    vix = macro["IndiaVIX"].iloc[-1]
-    sp500 = macro["SP500"].iloc[-1]
-    nasdaq = macro["NASDAQ"].iloc[-1]
-    dxy = macro["DXY"].iloc[-1]
-    us10y = macro["US10Y"].iloc[-1]
-    
-    return {
-        "regime": regime_res["regime"],
-        "vix": float(vix),
-        "nifty_close": float(nifty_close),
-        "nifty_change": float(nifty_chg),
-        "sp500": float(sp500),
-        "nasdaq": float(nasdaq),
-        "dxy": float(dxy),
-        "us10y": float(us10y),
-        "reasoning": regime_res["reasoning"]
-    }
+    if effective_vix > 28.0:
+        regime = "HIGH_VOLATILITY"
+        reasoning.append(f"Extreme volatility spike: India VIX elevated at {effective_vix:.1f}. High option premia and tail risk.")
+    elif effective_vix > 22.0 or (mock_overrides["NASDAQ_5d_ret"] is not None and mock_overrides["NASDAQ_5d_ret"] < -0.03):
+        regime = "BEAR"
+        reasoning.append(f"Bearish pressure: Elevated volatility ({effective_vix:.1f}) and tech headwind.")
+    elif live_data["nifty_change"] > 0.5 and effective_vix < 18.0:
+        regime = "BULL"
+        reasoning.append(f"Bull market: NIFTY 50 gaining (+{live_data['nifty_change']:.2f}%) with calm volatility (VIX: {effective_vix:.1f}).")
+    elif live_data["nifty_change"] < -0.5:
+        regime = "BEAR"
+        reasoning.append(f"Market weakness: NIFTY 50 declining ({live_data['nifty_change']:.2f}%). Defensive stance advised.")
+    else:
+        regime = "SIDEWAYS"
+        reasoning.append(f"Range-bound market: NIFTY 50 hovering at {live_data['nifty_close']:,.1f} with moderate VIX ({effective_vix:.1f}).")
+
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+
+    result = dict(live_data)
+    result["vix"] = float(effective_vix)
+    result["nasdaq"] = float(effective_nasdaq)
+    result["regime"] = regime
+    result["reasoning"] = reasoning
+    return result
 
 @app.get("/api/stocks")
-def list_stocks():
+def list_stocks(response: Response = None):
     """
     Returns Nifty 50 stocks with their master scores and recommendations.
     """
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
     import time
     now = time.time()
     results = []

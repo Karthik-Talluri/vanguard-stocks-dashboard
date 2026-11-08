@@ -28,6 +28,7 @@ import MultiBaggerPicks from "../components/MultiBaggerPicks";
 export default function Home() {
   const [stocks, setStocks] = useState<StockOverview[]>([]);
   const [marketStatus, setMarketStatus] = useState<MarketStatus | null>(null);
+  const [marketError, setMarketError] = useState<string | null>(null);
   const [selectedTicker, setSelectedTicker] = useState("RELIANCE");
   const [detail, setDetail] = useState<StockDetail | null>(null);
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
@@ -49,19 +50,22 @@ export default function Home() {
     try {
       const statusRes = await fetchMarketStatus();
       setMarketStatus(statusRes);
+      setMarketError(null);
       
       const stocksRes = await fetchStocks();
       setStocks(stocksRes);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Error fetching initial load:", e);
+      setMarketError(e?.message || "Failed to load live market feed.");
     }
   };
 
   useEffect(() => {
     loadMarketAndStocks();
-    const interval = setInterval(loadMarketAndStocks, 10000); // Poll list & status every 10s
+    const pollInterval = marketStatus?.is_market_open ? 10000 : 30000;
+    const interval = setInterval(loadMarketAndStocks, pollInterval);
     return () => clearInterval(interval);
-  }, []);
+  }, [marketStatus?.is_market_open]);
 
   // On ticker change, load full detail & chart
   const loadTickerDetails = async (ticker: string) => {
@@ -188,7 +192,7 @@ export default function Home() {
   return (
     <div style={{ padding: "12px 16px", maxWidth: "100%", width: "100%", display: "flex", flexDirection: "column", gap: "12px" }}>
       {/* Top Header */}
-      <DashboardHeader status={marketStatus} onRefresh={loadMarketAndStocks} />
+      <DashboardHeader status={marketStatus} onRefresh={loadMarketAndStocks} error={marketError} />
 
       {/* Tab Switcher */}
       <div className="tab-container" style={{ display: "flex", gap: "8px", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "12px", marginTop: "-4px" }}>
