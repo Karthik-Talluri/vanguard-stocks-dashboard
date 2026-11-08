@@ -50,6 +50,13 @@ export interface StockOverview {
   prob_down_1w?: number;
   prob_flat_1w?: number;
   weight?: number;
+  prev_close?: number;
+  day_high?: number;
+  day_low?: number;
+  day_open?: number;
+  last_updated?: string;
+  source?: string;
+  is_market_open?: boolean;
 }
 
 export interface MarketStatus {

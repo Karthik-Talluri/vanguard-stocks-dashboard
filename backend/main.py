@@ -15,7 +15,13 @@ from yfinance_engine import run_full_sync
 from agents.btst_engine import calculate_btst_metrics
 from futures_income_engine import FuturesIncomeEngine
 from nifty250_scanner import get_nifty250_multibaggers, perform_nifty250_scan
-from market_service import get_live_market_data, get_market_hours_status
+from market_service import (
+    get_live_market_data, 
+    get_market_hours_status,
+    get_all_live_stocks,
+    get_live_stock_quote,
+    NSE_STOCK_TICKERS
+)
 
 # BTST cache variables
 BTST_CACHE = None
@@ -112,57 +118,30 @@ def load_data_for_ticker(ticker: str, force_live: bool = False, calculate_inds: 
     """
     Loads daily stock, sector, macro, and news data.
     Applies overrides to simulate different market regimes.
-    Integrates actual live prices from Yahoo Finance.
+    Integrates actual live prices from NSE/Yahoo Finance.
     """
     stock_daily = pd.read_csv(os.path.join(DATA_DIR, f"{ticker}_daily.csv"))
     nifty_sectors = read_shared_csv(os.path.join(DATA_DIR, "nifty_sectors.csv"))
     macro_indices = read_shared_csv(os.path.join(DATA_DIR, "macro_indices.csv"))
     news_feed = read_shared_csv(os.path.join(DATA_DIR, "news_feed.csv"))
     
-    # Integrate live Yahoo Finance stock price with cache
-    import time
-    import numpy as np
-    now = time.time()
-    cached_entry = LIVE_PRICE_CACHE.get(ticker)
-    
-    live_price = None
-    live_volume = None
-    
-    if cached_entry and (now - cached_entry[0] < LIVE_PRICE_CACHE_TTL):
-        live_price, live_volume = cached_entry[1], cached_entry[2]
-    elif force_live:
-        # Fetch from yfinance
-        yf_symbol = f"{ticker}.NS"
-        if ticker == "INFYS":
-            yf_symbol = "INFY.NS"
-        elif ticker == "TATAMOTORS":
-            yf_symbol = "TATAMOTORS.NS"
-        elif ticker == "MM":
-            yf_symbol = "M&M.NS"
-        elif ticker == "BAJAJ_AUTO":
-            yf_symbol = "BAJAJ-AUTO.NS"
-        try:
-            import yfinance as yf
-            t = yf.Ticker(yf_symbol)
-            info_dict = dict(t.fast_info)
-            live_price = info_dict.get("lastPrice") or info_dict.get("last_price") or info_dict.get("close")
-            live_volume = info_dict.get("lastVolume") or info_dict.get("last_volume") or info_dict.get("volume")
-            if live_price is not None and not np.isnan(live_price):
-                LIVE_PRICE_CACHE[ticker] = (now, live_price, live_volume)
-                print(f"Fetched live yfinance price for {ticker}: {live_price}")
-        except Exception as e:
-            print(f"Error fetching live yfinance price for {ticker}: {e}")
-            if cached_entry:
-                live_price, live_volume = cached_entry[1], cached_entry[2]
-    elif cached_entry:
-        # Use cached value (even if expired) to avoid network request during listing
-        live_price, live_volume = cached_entry[1], cached_entry[2]
-                
-    if live_price is not None and not np.isnan(live_price):
-        latest_idx = stock_daily.index[-1]
-        stock_daily.loc[latest_idx, "Close"] = live_price
-        if live_volume is not None and not np.isnan(live_volume):
-            stock_daily.loc[latest_idx, "Volume"] = live_volume
+    # Integrate live verified NSE stock price
+    try:
+        quote = get_live_stock_quote(ticker)
+        if quote and quote.get("price"):
+            latest_idx = stock_daily.index[-1]
+            live_price = float(quote["price"])
+            stock_daily.loc[latest_idx, "Close"] = live_price
+            if quote.get("high"):
+                stock_daily.loc[latest_idx, "High"] = max(float(quote["high"]), live_price)
+            if quote.get("low"):
+                stock_daily.loc[latest_idx, "Low"] = min(float(quote["low"]), live_price)
+            if quote.get("open"):
+                stock_daily.loc[latest_idx, "Open"] = float(quote["open"])
+            if quote.get("volume"):
+                stock_daily.loc[latest_idx, "Volume"] = int(quote["volume"])
+    except Exception as e:
+        pass
 
     # Sync latest live NIFTY and Macro indices if available
     try:
@@ -360,7 +339,8 @@ def get_market_status(response: Response = None):
 @app.get("/api/stocks")
 def list_stocks(response: Response = None):
     """
-    Returns Nifty 50 stocks with their master scores and recommendations.
+    Returns all 50 Nifty stocks with official NSE live/last-session prices,
+    indicators, master scores and recommendations.
     """
     if response:
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -368,27 +348,58 @@ def list_stocks(response: Response = None):
         response.headers["Expires"] = "0"
     import time
     now = time.time()
+
+    # Fetch all live stock quotes in parallel (cached)
+    live_stock_data = get_all_live_stocks()
+    stock_quotes = live_stock_data.get("quotes", {})
+    live_timestamp = live_stock_data.get("last_updated")
+    is_open = live_stock_data.get("is_market_open", False)
+
+    # Nifty 50 representative index weights
+    nifty50_weights_mapping = {
+        "RELIANCE": 9.2, "TCS": 5.8, "HDFCBANK": 12.1, "INFYS": 4.8,
+        "ICICIBANK": 8.4, "SBIN": 2.9, "ITC": 3.2, "HINDUNILVR": 2.8,
+        "TATAMOTORS": 2.1, "MARUTI": 2.5, "DRREDDY": 1.8, "SUNPHARMA": 2.4,
+        "WIPRO": 1.8, "HCLTECH": 2.5, "TITAN": 1.5, "TATASTEEL": 1.6,
+        "BAJFINANCE": 3.2, "AXISBANK": 3.1, "KOTAKBANK": 4.1, "BHARTIARTL": 2.8
+    }
+
     results = []
     for ticker, meta in STOCKS_METADATA.items():
         try:
-            # Check cache first with lock
+            quote = stock_quotes.get(ticker) or get_live_stock_quote(ticker)
+
+            # Check cache first with lock for scoring calculations
             lock = get_ticker_lock(ticker)
             with lock:
                 cached_entry = ANALYSIS_CACHE.get(ticker)
                 if cached_entry and (now - cached_entry[0] < ANALYSIS_CACHE_TTL):
-                    _, analysis, close_now, chg_pct = cached_entry
+                    _, analysis, _, _ = cached_entry
                 else:
-                    # Cache miss: load with indicators and run analysis
+                    # Cache miss: load with live price indicators and run analysis
                     data = load_data_for_ticker(ticker, calculate_inds=True)
                     analysis = engine.analyze_stock(ticker, data)
-                    
-                    stock_df = data["stock_daily"]
-                    close_now = float(stock_df["Close"].iloc[-1])
-                    close_prev = float(stock_df["Close"].iloc[-2])
-                    chg_pct = float((close_now - close_prev) / close_prev * 100)
-                    
-                    ANALYSIS_CACHE[ticker] = (now, analysis, close_now, chg_pct)
+                    ANALYSIS_CACHE[ticker] = (now, analysis, 0, 0)
             
+            # Extract verified prices from the official NSE quote
+            if quote and quote.get("price"):
+                price_val = float(quote["price"])
+                prev_close_val = float(quote.get("prev_close") or price_val)
+                chg_pct_val = float(quote.get("change_pct") or ((price_val - prev_close_val) / prev_close_val * 100))
+                high_val = float(quote.get("high") or price_val)
+                low_val = float(quote.get("low") or price_val)
+                open_val = float(quote.get("open") or price_val)
+                quote_source = quote.get("source", "nse_official")
+            else:
+                stock_df = data["stock_daily"]
+                price_val = float(stock_df["Close"].iloc[-1])
+                prev_close_val = float(stock_df["Close"].iloc[-2])
+                chg_pct_val = float((price_val - prev_close_val) / prev_close_val * 100.0)
+                high_val = float(stock_df["High"].iloc[-1])
+                low_val = float(stock_df["Low"].iloc[-1])
+                open_val = float(stock_df["Open"].iloc[-1])
+                quote_source = "historical_daily"
+
             # Get ML Agent probabilities
             ml_agent = analysis.get("agents", {}).get("ML Prediction Agent", {})
             ml_metrics = ml_agent.get("metrics", {})
@@ -400,22 +411,18 @@ def list_stocks(response: Response = None):
             prob_down_1w = round(ml_metrics.get("prob_down_1w", 0.0) * 100, 1)
             prob_flat_1w = round(ml_metrics.get("prob_flat_1w", 0.0) * 100, 1)
 
-            # Nifty 50 representative index weights
-            nifty50_weights_mapping = {
-                "RELIANCE": 9.2, "TCS": 5.8, "HDFCBANK": 12.1, "INFYS": 4.8,
-                "ICICIBANK": 8.4, "SBIN": 2.9, "ITC": 3.2, "HINDUNILVR": 2.8,
-                "TATAMOTORS": 2.1, "MARUTI": 2.5, "DRREDDY": 1.8, "SUNPHARMA": 2.4,
-                "WIPRO": 1.8, "HCLTECH": 2.5, "TITAN": 1.5, "TATASTEEL": 1.6,
-                "BAJFINANCE": 3.2, "AXISBANK": 3.1, "KOTAKBANK": 4.1, "BHARTIARTL": 2.8
-            }
             weight = nifty50_weights_mapping.get(ticker, 1.0)
 
             results.append({
                 "ticker": ticker,
                 "sector": meta["sector"],
                 "market_cap": meta.get("market_cap", "large"),
-                "price": round(float(close_now), 2),
-                "change_pct": round(float(chg_pct), 2),
+                "price": round(float(price_val), 2),
+                "prev_close": round(float(prev_close_val), 2),
+                "change_pct": round(float(chg_pct_val), 2),
+                "day_high": round(float(high_val), 2),
+                "day_low": round(float(low_val), 2),
+                "day_open": round(float(open_val), 2),
                 "master_score": analysis["master_score"],
                 "recommendation": analysis["recommendation"],
                 "prob_up": prob_up,
@@ -424,7 +431,10 @@ def list_stocks(response: Response = None):
                 "prob_up_1w": prob_up_1w,
                 "prob_down_1w": prob_down_1w,
                 "prob_flat_1w": prob_flat_1w,
-                "weight": weight
+                "weight": weight,
+                "last_updated": live_timestamp,
+                "source": quote_source,
+                "is_market_open": is_open
             })
         except Exception as e:
             print(f"Error loading {ticker}: {str(e)}")
@@ -616,13 +626,14 @@ def get_multibagger_picks():
 @app.get("/api/stocks/{ticker}")
 def get_stock_detail(ticker: str):
     """
-    Returns full scorecard metrics, dynamic weightings, and agent reasonings.
+    Returns full scorecard metrics, dynamic weightings, and agent reasonings with verified NSE quotes.
     """
     import time
     ticker = ticker.upper()
     if ticker not in STOCKS_METADATA:
         return {"error": "Ticker not found"}
         
+    quote = get_live_stock_quote(ticker)
     data = load_data_for_ticker(ticker, force_live=True)
     
     now = time.time()
@@ -633,14 +644,18 @@ def get_stock_detail(ticker: str):
             analysis = cached_entry[1]
         else:
             analysis = engine.analyze_stock(ticker, data)
-            stock_df = data["stock_daily"]
-            close_now = float(stock_df["Close"].iloc[-1])
-            close_prev = float(stock_df["Close"].iloc[-2])
-            chg_pct = float((close_now - close_prev) / close_prev * 100)
-            ANALYSIS_CACHE[ticker] = (now, analysis, close_now, chg_pct)
+            ANALYSIS_CACHE[ticker] = (now, analysis, 0, 0)
     
     analysis_copy = dict(analysis)
     analysis_copy["fundamentals_meta"] = STOCKS_METADATA[ticker]
+    if quote and quote.get("price"):
+        analysis_copy["spot_price"] = quote["price"]
+        analysis_copy["price"] = quote["price"]
+        analysis_copy["prev_close"] = quote.get("prev_close", quote["price"])
+        analysis_copy["day_high"] = quote.get("high", quote["price"])
+        analysis_copy["day_low"] = quote.get("low", quote["price"])
+        analysis_copy["change_pct"] = quote.get("change_pct", 0.0)
+        analysis_copy["source"] = quote.get("source", "nse_official")
     return analysis_copy
 
 @app.get("/api/stocks/{ticker}/chart")
@@ -731,18 +746,19 @@ async def websocket_endpoint(websocket: WebSocket):
             except asyncio.TimeoutError:
                 pass # Normal timeout if no messages received
                 
-            # Perform mock tick update & run agents
+            # Perform live update & run agents with verified NSE quotes
             if subscribed_ticker in STOCKS_METADATA:
+                quote = get_live_stock_quote(subscribed_ticker)
                 stock_data = load_data_for_ticker(subscribed_ticker, force_live=True)
                 opp = futures_engine.analyze_opportunity_master(subscribed_ticker, stock_data)
                 
-                # Fetch price details
-                df = stock_data["stock_daily"]
-                close_price = df["Close"].iloc[-1]
+                real_price = float(quote["price"]) if (quote and quote.get("price")) else float(stock_data["stock_daily"]["Close"].iloc[-1])
+                pct_change = float(quote["change_pct"]) if (quote and quote.get("change_pct") is not None) else 0.0
+                prev_close = float(quote["prev_close"]) if (quote and quote.get("prev_close")) else real_price
                 
-                # Simulate small random walk tick (+/- 0.15%)
-                pct_tick = random.uniform(-0.0015, 0.0015)
-                simulated_price = close_price * (1 + pct_tick)
+                mkt_status = get_market_hours_status()
+                is_open = mkt_status["is_market_open"]
+                session_msg = mkt_status["market_session_message"]
                 
                 # Dynamic consensus stream reasoning items
                 market_score = opp["agents"]["market_regime"]["score"]
@@ -766,8 +782,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     rec_str = f"Sell {opp['recommendation']['option_contract']}"
                     rec_log = "Sell OTM Call (Short Call)"
                 
+                status_prefix = f"[Live Market: {session_msg}]" if is_open else f"[{session_msg}] Official Closing Price"
                 agent_logs = [
-                    f"[System] Ticking: {subscribed_ticker} spot price simulated at {simulated_price:.2f} (change: {pct_tick*100:+.2f}%)",
+                    f"{status_prefix}: {subscribed_ticker} NSE LTP: ₹{real_price:.2f} ({pct_change:+.2f}%) | Prev Close: ₹{prev_close:.2f}",
                     f"[Market Regime Agent] Score: {market_score}/100. Regime: {opp['agents']['market_regime']['regime']}. India VIX: {opp['agents']['market_regime']['vix']:.1f}",
                     f"[Futures Strength Agent] Score: {strength_score}/100. Trend alignment is {opp['agents']['futures_strength']['trend_alignment']}",
                     f"[OI Intelligence Agent] Score: {oi_score}/100. Buildup: {opp['agents']['oi_intelligence']['buildup']}. PCR: {opp['agents']['oi_intelligence']['pcr']:.2f}",
@@ -780,8 +797,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 payload = {
                     "ticker": subscribed_ticker,
-                    "simulated_price": round(simulated_price, 2),
-                    "pct_change": round(pct_tick * 100, 3),
+                    "simulated_price": round(real_price, 2),  # Maintained for frontend compatibility
+                    "price": round(real_price, 2),
+                    "prev_close": round(prev_close, 2),
+                    "pct_change": round(pct_change, 2),
                     "master_score": opp["strategy_score"],
                     "strategy_score": opp["strategy_score"],
                     "recommendation": rec_str,
@@ -791,12 +810,14 @@ async def websocket_endpoint(websocket: WebSocket):
                     "expected_yield": opp["recommendation"]["expected_yield"],
                     "pop": opp["recommendation"]["pop"],
                     "market_regime": opp["agents"]["market_regime"]["regime"],
-                    "agent_logs": agent_logs
+                    "agent_logs": agent_logs,
+                    "is_market_open": is_open,
+                    "source": quote.get("source", "nse_official") if quote else "nse_official"
                 }
                 
                 await websocket.send_json(payload)
                 
-            await asyncio.sleep(1.8) # Update every 1.8 seconds
+            await asyncio.sleep(2.5) # Update every 2.5 seconds
             
     except WebSocketDisconnect:
         print("WS client disconnected")
