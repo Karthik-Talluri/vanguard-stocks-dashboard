@@ -1,5 +1,5 @@
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
-export const WS_BASE = process.env.NEXT_PUBLIC_WS_BASE || "ws://localhost:8000";
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1" ? "" : "http://localhost:8000");
+export const WS_BASE = process.env.NEXT_PUBLIC_WS_BASE ?? (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1" ? `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}` : "ws://localhost:8000");
 
 export interface StockOverview {
   ticker: string;
