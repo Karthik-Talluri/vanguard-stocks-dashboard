@@ -27,6 +27,7 @@ export interface MarketStatus {
   dxy: number;
   us10y: number;
   reasoning: string[];
+  last_synced?: number;
 }
 
 export interface NewsArticle {
@@ -475,6 +476,12 @@ export interface PortfolioResponse {
 export async function fetchGeneratedPortfolio(amount: number, style: string): Promise<PortfolioResponse> {
   const res = await fetch(`${API_BASE}/api/portfolio/generate?amount=${amount}&style=${style}`);
   if (!res.ok) throw new Error("Failed to fetch optimized portfolio");
+  return res.json();
+}
+
+export async function syncLiveData(): Promise<{ status: string; message: string; synced_stocks: number; timestamp: number }> {
+  const res = await fetch(`${API_BASE}/api/market/sync-live`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to trigger live sync");
   return res.json();
 }
 

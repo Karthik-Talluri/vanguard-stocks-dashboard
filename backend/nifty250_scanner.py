@@ -64,7 +64,7 @@ TICKERS_250 = [
 ]
 
 INDEX_TICKER = "^NSEI"
-CACHE_FILE = "/home/rustymachine/Stocks/backend/scratch/nifty250_results.json"
+CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scratch", "nifty250_results.json")
 _cached_data = None
 
 # Sector Catalysts Mapping
