@@ -2,10 +2,24 @@ import os
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from datetime import datetime
+from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from data_generator import STOCKS_METADATA
 
-DATA_DIR = "data"
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BACKEND_DIR, "data")
+ROOT_DATA_DIR = os.path.join(os.path.dirname(BACKEND_DIR), "data")
+
+def save_csv(df: pd.DataFrame, filename: str):
+    """Saves dataframe to both backend/data and root data directories."""
+    p1 = os.path.join(DATA_DIR, filename)
+    df.to_csv(p1, index=False)
+    if os.path.exists(ROOT_DATA_DIR) and os.path.abspath(ROOT_DATA_DIR) != os.path.abspath(DATA_DIR):
+        try:
+            p2 = os.path.join(ROOT_DATA_DIR, filename)
+            df.to_csv(p2, index=False)
+        except Exception:
+            pass
 
 # Ensure output directory exists
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -146,7 +160,7 @@ def sync_macro_indices(period: str = "1y"):
         df["USFedRate"] = 5.25 * np.ones(n_days)
         df["USGDP"] = 2.1 + np.random.normal(0, 0.05, n_days)
         
-        df.to_csv(file_path, index=False)
+        save_csv(df, "macro_indices.csv")
         print(f"Macro indices synchronized successfully: {len(df)} rows. Saved to {file_path}")
     else:
         print("Failed to synchronize macro indices.")
@@ -156,117 +170,119 @@ def sync_nifty_sectors(period: str = "1y"):
     file_path = os.path.join(DATA_DIR, "nifty_sectors.csv")
     df = clean_and_align_dataframes(SECTOR_TICKERS, period, csv_path=file_path)
     if df is not None:
-        df.to_csv(file_path, index=False)
+        save_csv(df, "nifty_sectors.csv")
         print(f"Nifty sectors synchronized successfully: {len(df)} rows. Saved to {file_path}")
     else:
         print("Failed to synchronize Nifty sectors.")
 
+def _sync_single_stock(ticker: str, meta: dict, period: str):
+    yf_symbol = f"{ticker}.NS"
+    if ticker == "INFYS":
+        yf_symbol = "INFY.NS"
+    elif ticker == "TATAMOTORS":
+        yf_symbol = "TMPV.NS"
+    elif ticker == "MM":
+        yf_symbol = "M&M.NS"
+    elif ticker == "BAJAJ_AUTO":
+        yf_symbol = "BAJAJ-AUTO.NS"
+
+    try:
+        hist = yf.Ticker(yf_symbol).history(period=period)
+        if hist.empty:
+            print(f"Warning: No data returned for {yf_symbol}")
+            return
+            
+        df = hist.reset_index()
+        df["Date"] = df["Date"].dt.tz_localize(None).dt.strftime("%Y-%m-%d")
+        df = df[["Date", "Open", "High", "Low", "Close", "Volume"]].copy()
+        
+        n_rows = len(df)
+        returns = df["Close"] / df["Open"] - 1.0
+        
+        # Augment with all the new indicators
+        df["DeliveryPct"] = np.clip(50.0 - 80.0 * returns.abs() + np.random.normal(0, 5.0, n_rows), 15.0, 80.0)
+        
+        cum_ret = (df["Close"] / df["Close"].iloc[0]).fillna(1.0)
+        df["FuturesOI"] = (1_000_000 * cum_ret * (1.0 + np.random.normal(0, 0.02, n_rows))).astype(int)
+        
+        df["FII_Flow"] = 500.0 * returns + np.random.normal(0, 50.0, n_rows)
+        df["DII_Flow"] = -200.0 * returns + np.random.normal(0, 45.0, n_rows)
+        df["MF_Flow"] = 400.0 * returns + np.random.normal(20.0, 15.0, n_rows)
+        
+        # SIP Flow steady upward trend
+        df["SIP_Flow"] = 100.0 * (1.0 + 0.0002 * np.arange(n_rows)) + np.random.normal(0, 0.1, n_rows)
+        
+        # Shareholding (piecewise constant)
+        prom_vals = np.ones(n_rows) * meta.get("promoter_pct", 50.0)
+        fii_vals = np.ones(n_rows) * meta.get("fii_pct", 20.0) + np.random.normal(0, 0.1, n_rows).cumsum() * 0.02
+        dii_vals = np.ones(n_rows) * meta.get("dii_pct", 15.0) + np.random.normal(0, 0.08, n_rows).cumsum() * 0.02
+        
+        # Constrain FII/DII percentages
+        fii_vals = np.clip(fii_vals, 0.0, 90.0)
+        dii_vals = np.clip(dii_vals, 0.0, 90.0)
+        df["PromoterPct"] = prom_vals
+        df["FiiPct"] = fii_vals
+        df["DiiPct"] = dii_vals
+        df["PublicPct"] = 100.0 - (df["PromoterPct"] + df["FiiPct"] + df["DiiPct"])
+        
+        # Corporate actions (probabilities)
+        df["DividendYield"] = np.clip(1.5 + np.random.normal(0, 0.005, n_rows).cumsum(), 0.1, 7.0)
+        df["BonusIssues"] = (np.random.random(n_rows) < 0.0005).astype(float)
+        df["StockSplits"] = (np.random.random(n_rows) < 0.0002).astype(float)
+        df["Buybacks"] = (np.random.random(n_rows) < 0.0006).astype(float)
+        df["PromoterBuying"] = (np.random.random(n_rows) < 0.005).astype(float)
+        df["PromoterSelling"] = (np.random.random(n_rows) < 0.005).astype(float)
+        
+        # Options indicators
+        df["MaxPain"] = (df["Close"] / 5.0).round() * 5.0
+        df["IVRank"] = np.clip(45.0 + np.random.normal(0, 1.0, n_rows).cumsum() * 0.2, 5.0, 95.0)
+        df["IVPercentile"] = np.clip(df["IVRank"] + np.random.normal(0, 2.0, n_rows), 0.0, 100.0)
+        df["OptionsPCR"] = np.clip(1.0 + 3.0 * returns + np.random.normal(0, 0.05, n_rows), 0.4, 2.0)
+        
+        # Smart Money indicators
+        df["BlockDealsVolume"] = np.random.normal(5.0, 50.0, n_rows)
+        df["BulkDealsVolume"] = np.random.normal(2.0, 20.0, n_rows)
+        df["PromoterPledging"] = np.clip(10.0 + np.cumsum(np.random.normal(0, 0.2, n_rows)), 0.0, 60.0)
+        df["MFHoldingChange"] = np.random.normal(0.02, 0.04, n_rows)
+
+        # Liquidity indicators
+        df["DailyTradedValue"] = df["Volume"] * df["Close"] / 1e7 # in Cr
+        df["BidAskSpread"] = np.clip(0.01 + np.abs(np.random.normal(0, 0.01, n_rows)), 0.002, 0.15)
+        df["MarketDepth"] = np.clip(1.0 + np.random.normal(0, 0.1, n_rows), 0.5, 2.0)
+        df["OrderBookImbalance"] = np.clip(np.random.normal(0, 15.0, n_rows), -100.0, 100.0)
+
+        # Intraday Activity indicators
+        prev_prices = df["Close"].shift(1).fillna(df["Close"].iloc[0]).to_numpy()
+        df["OpeningGapPct"] = (df["Open"] - prev_prices) / prev_prices * 100
+        df["FirstHourVolumePct"] = np.clip(30.0 + np.random.normal(0, 4.0, n_rows), 15.0, 50.0)
+        df["ClosingAuctionStrength"] = np.random.normal(0.0, 5.0, n_rows)
+
+        # Alternative Data indicators
+        df["AppDownloadsGrowth"] = np.clip(20.0 + np.cumsum(np.random.normal(0, 0.5, n_rows)), -10.0, 100.0)
+        df["WebTrafficGrowth"] = np.clip(15.0 + np.cumsum(np.random.normal(0, 0.4, n_rows)), -20.0, 100.0)
+        df["SearchTrends"] = np.clip(8.0 + np.cumsum(np.random.normal(0, 0.3, n_rows)), -5.0, 50.0)
+        df["SocialMentions"] = np.clip(12.0 + np.cumsum(np.random.normal(0, 1.2, n_rows)), -30.0, 200.0)
+        df["JobPostingsGrowth"] = np.clip(5.0 + np.cumsum(np.random.normal(0, 0.2, n_rows)), -15.0, 40.0)
+
+        # Analyst Layer indicators
+        df["AnalystBuy"] = np.clip(25.0 + np.cumsum(np.random.randint(-1, 2, n_rows)), 0.0, 60.0)
+        df["AnalystHold"] = np.clip(8.0 + np.cumsum(np.random.randint(-1, 2, n_rows)), 0.0, 20.0)
+        df["AnalystSell"] = np.clip(3.0 + np.cumsum(np.random.randint(-1, 2, n_rows)), 0.0, 15.0)
+        df["TargetPriceRevision"] = np.random.normal(0.5, 2.0, n_rows)
+        df["EstimateRevision"] = np.random.normal(0.2, 1.5, n_rows)
+        
+        save_csv(df, f"{ticker}_daily.csv")
+        print(f"Successfully saved {ticker} data ({len(df)} rows).")
+    except Exception as e:
+        print(f"Error syncing {ticker}: {str(e)}")
+
 def sync_individual_stocks(period: str = "1y"):
-    print("\n--- Synchronizing Nifty 50 Universe Stocks ---")
+    print("\n--- Synchronizing Nifty 50 Universe Stocks (Parallel) ---")
     np.random.seed(42)
-    
-    for ticker, meta in STOCKS_METADATA.items():
-        yf_symbol = f"{ticker}.NS"
-        if ticker == "INFYS":
-            yf_symbol = "INFY.NS"
-        elif ticker == "TATAMOTORS":
-            yf_symbol = "TATAMOTORS.NS"
-        elif ticker == "MM":
-            yf_symbol = "M&M.NS"
-        elif ticker == "BAJAJ_AUTO":
-            yf_symbol = "BAJAJ-AUTO.NS"
-
-        print(f"Syncing stock {ticker} ({yf_symbol})...")
-        try:
-            hist = yf.Ticker(yf_symbol).history(period=period)
-            if hist.empty:
-                print(f"Warning: No data returned for {yf_symbol}")
-                continue
-                
-            df = hist.reset_index()
-            df["Date"] = df["Date"].dt.tz_localize(None).dt.strftime("%Y-%m-%d")
-            df = df[["Date", "Open", "High", "Low", "Close", "Volume"]].copy()
-            
-            n_rows = len(df)
-            returns = df["Close"] / df["Open"] - 1.0
-            
-            # Augment with all the new indicators
-            df["DeliveryPct"] = np.clip(50.0 - 80.0 * returns.abs() + np.random.normal(0, 5.0, n_rows), 15.0, 80.0)
-            
-            cum_ret = (df["Close"] / df["Close"].iloc[0]).fillna(1.0)
-            df["FuturesOI"] = (1_000_000 * cum_ret * (1.0 + np.random.normal(0, 0.02, n_rows))).astype(int)
-            
-            df["FII_Flow"] = 500.0 * returns + np.random.normal(0, 50.0, n_rows)
-            df["DII_Flow"] = -200.0 * returns + np.random.normal(0, 45.0, n_rows)
-            df["MF_Flow"] = 400.0 * returns + np.random.normal(20.0, 15.0, n_rows)
-            
-            # SIP Flow steady upward trend
-            df["SIP_Flow"] = 100.0 * (1.0 + 0.0002 * np.arange(n_rows)) + np.random.normal(0, 0.1, n_rows)
-            
-            # Shareholding (piecewise constant)
-            prom_vals = np.ones(n_rows) * meta["promoter_pct"]
-            fii_vals = np.ones(n_rows) * meta["fii_pct"] + np.random.normal(0, 0.1, n_rows).cumsum() * 0.02
-            dii_vals = np.ones(n_rows) * meta["dii_pct"] + np.random.normal(0, 0.08, n_rows).cumsum() * 0.02
-            
-            # Constrain FII/DII percentages
-            fii_vals = np.clip(fii_vals, 0.0, 90.0)
-            dii_vals = np.clip(dii_vals, 0.0, 90.0)
-            df["PromoterPct"] = prom_vals
-            df["FiiPct"] = fii_vals
-            df["DiiPct"] = dii_vals
-            df["PublicPct"] = 100.0 - (df["PromoterPct"] + df["FiiPct"] + df["DiiPct"])
-            
-            # Corporate actions (probabilities)
-            df["DividendYield"] = np.clip(1.5 + np.random.normal(0, 0.005, n_rows).cumsum(), 0.1, 7.0)
-            df["BonusIssues"] = (np.random.random(n_rows) < 0.0005).astype(float)
-            df["StockSplits"] = (np.random.random(n_rows) < 0.0002).astype(float)
-            df["Buybacks"] = (np.random.random(n_rows) < 0.0006).astype(float)
-            df["PromoterBuying"] = (np.random.random(n_rows) < 0.005).astype(float)
-            df["PromoterSelling"] = (np.random.random(n_rows) < 0.005).astype(float)
-            
-            # Options indicators
-            df["MaxPain"] = (df["Close"] / 5.0).round() * 5.0
-            df["IVRank"] = np.clip(45.0 + np.random.normal(0, 1.0, n_rows).cumsum() * 0.2, 5.0, 95.0)
-            df["IVPercentile"] = np.clip(df["IVRank"] + np.random.normal(0, 2.0, n_rows), 0.0, 100.0)
-            df["OptionsPCR"] = np.clip(1.0 + 3.0 * returns + np.random.normal(0, 0.05, n_rows), 0.4, 2.0)
-            
-            # Smart Money indicators
-            df["BlockDealsVolume"] = np.random.normal(5.0, 50.0, n_rows)
-            df["BulkDealsVolume"] = np.random.normal(2.0, 20.0, n_rows)
-            df["PromoterPledging"] = np.clip(10.0 + np.cumsum(np.random.normal(0, 0.2, n_rows)), 0.0, 60.0)
-            df["MFHoldingChange"] = np.random.normal(0.02, 0.04, n_rows)
-
-            # Liquidity indicators
-            df["DailyTradedValue"] = df["Volume"] * df["Close"] / 1e7 # in Cr
-            df["BidAskSpread"] = np.clip(0.01 + np.abs(np.random.normal(0, 0.01, n_rows)), 0.002, 0.15)
-            df["MarketDepth"] = np.clip(1.0 + np.random.normal(0, 0.1, n_rows), 0.5, 2.0)
-            df["OrderBookImbalance"] = np.clip(np.random.normal(0, 15.0, n_rows), -100.0, 100.0)
-
-            # Intraday Activity indicators
-            prev_prices = df["Close"].shift(1).fillna(df["Close"].iloc[0]).to_numpy()
-            df["OpeningGapPct"] = (df["Open"] - prev_prices) / prev_prices * 100
-            df["FirstHourVolumePct"] = np.clip(30.0 + np.random.normal(0, 4.0, n_rows), 15.0, 50.0)
-            df["ClosingAuctionStrength"] = np.random.normal(0.0, 5.0, n_rows)
-
-            # Alternative Data indicators
-            df["AppDownloadsGrowth"] = np.clip(20.0 + np.cumsum(np.random.normal(0, 0.5, n_rows)), -10.0, 100.0)
-            df["WebTrafficGrowth"] = np.clip(15.0 + np.cumsum(np.random.normal(0, 0.4, n_rows)), -20.0, 100.0)
-            df["SearchTrends"] = np.clip(8.0 + np.cumsum(np.random.normal(0, 0.3, n_rows)), -5.0, 50.0)
-            df["SocialMentions"] = np.clip(12.0 + np.cumsum(np.random.normal(0, 1.2, n_rows)), -30.0, 200.0)
-            df["JobPostingsGrowth"] = np.clip(5.0 + np.cumsum(np.random.normal(0, 0.2, n_rows)), -15.0, 40.0)
-
-            # Analyst Layer indicators
-            df["AnalystBuy"] = np.clip(25.0 + np.cumsum(np.random.randint(-1, 2, n_rows)), 0.0, 60.0)
-            df["AnalystHold"] = np.clip(8.0 + np.cumsum(np.random.randint(-1, 2, n_rows)), 0.0, 20.0)
-            df["AnalystSell"] = np.clip(3.0 + np.cumsum(np.random.randint(-1, 2, n_rows)), 0.0, 15.0)
-            df["TargetPriceRevision"] = np.random.normal(0.5, 2.0, n_rows)
-            df["EstimateRevision"] = np.random.normal(0.2, 1.5, n_rows)
-            
-            file_path = os.path.join(DATA_DIR, f"{ticker}_daily.csv")
-            df.to_csv(file_path, index=False)
-            print(f"Successfully saved {ticker} data. Row count: {len(df)}")
-        except Exception as e:
-            print(f"Error syncing {ticker}: {str(e)}")
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(_sync_single_stock, ticker, meta, period) for ticker, meta in STOCKS_METADATA.items()]
+        for f in as_completed(futures):
+            pass
 
 def sync_news_feed():
     print("\n--- Synchronizing Live Yahoo Finance News Feed ---")
@@ -412,19 +428,28 @@ def sync_news_feed():
         # Limit to top 500 records to keep database lean
         combined_df = combined_df.head(500)
         
-        combined_df.to_csv(news_file, index=False)
+        save_csv(combined_df, "news_feed.csv")
         print(f"News feed synchronized successfully: {len(new_df)} new articles added, total {len(combined_df)} articles in database.")
     else:
         print("No new news articles found to append.")
 
-def run_full_sync(period: str = "1y"):
-    # Check if we synced recently (within the last 4 hours)
+def run_full_sync(period: str = "1y", force: bool = False):
     macro_file = os.path.join(DATA_DIR, "macro_indices.csv")
-    if os.path.exists(macro_file):
-        mtime = os.path.getmtime(macro_file)
-        if datetime.now().timestamp() - mtime < 14400: # 4 hours
-            print("VanguardScore: Data was synced recently (< 4 hours ago). Skipping Yahoo Finance synchronization on startup to keep server responsive.")
-            return
+    if not force and os.path.exists(macro_file):
+        try:
+            mdf = pd.read_csv(macro_file)
+            last_date_str = str(mdf["Date"].iloc[-1])
+            last_dt = pd.to_datetime(last_date_str)
+            # If data is older than 2 days, force sync
+            if (pd.Timestamp.now() - last_dt).days > 2:
+                print(f"VanguardScore: Data is outdated (last date {last_date_str}). Proceeding with full sync...")
+            else:
+                mtime = os.path.getmtime(macro_file)
+                if datetime.now().timestamp() - mtime < 3600: # 1 hour
+                    print("VanguardScore: Data was synced recently (< 1 hour ago). Skipping.")
+                    return
+        except Exception:
+            pass
 
     print(f"Starting VanguardScore full yfinance sync for period: {period}")
     start_time = datetime.now()

@@ -9,9 +9,11 @@ frontend/.env*
 frontend/.vercel/
 
 # Backend dependencies and cache
+.venv/
 backend/venv/
-backend/__pycache__/
-backend/*.pyc
+venv/
+**/__pycache__/
+*.pyc
 backend/uvicorn.log
 backend/.pytest_cache/
 backend/scratch/
