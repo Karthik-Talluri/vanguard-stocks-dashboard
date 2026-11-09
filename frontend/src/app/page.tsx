@@ -24,6 +24,9 @@ import FuturesScanners from "../components/FuturesScanners";
 import ProbabilityHeatmap from "../components/ProbabilityHeatmap";
 import ShortTermPicks from "../components/ShortTermPicks";
 import MultiBaggerPicks from "../components/MultiBaggerPicks";
+import PaperTradingDashboard from "../components/PaperTradingDashboard";
+import TradeModal from "../components/TradeModal";
+import { fetchPaperAccount, PaperAccount } from "../utils/api";
 
 export default function Home() {
   const [stocks, setStocks] = useState<StockOverview[]>([]);
@@ -33,7 +36,13 @@ export default function Home() {
   const [detail, setDetail] = useState<StockDetail | null>(null);
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [chartInterval, setChartInterval] = useState("1d");
-  const [activeTab, setActiveTab] = useState<"opportunities" | "shortterm" | "research" | "heatmap" | "stream" | "scanners" | "multibagger">("opportunities");
+  const [activeTab, setActiveTab] = useState<"opportunities" | "shortterm" | "multibagger" | "papertrading" | "research" | "heatmap" | "stream" | "scanners">("opportunities");
+
+  // Global Paper Trading Modal states
+  const [globalTradeModalOpen, setGlobalTradeModalOpen] = useState(false);
+  const [modalTradeTicker, setModalTradeTicker] = useState("RELIANCE");
+  const [modalTradeType, setModalTradeType] = useState<"BUY" | "SELL">("BUY");
+  const [paperAccount, setPaperAccount] = useState<PaperAccount | null>(null);
 
   // WebSocket / streaming states
   const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
@@ -160,7 +169,24 @@ export default function Home() {
       }
     };
     window.addEventListener("select-stock", handler);
-    return () => window.removeEventListener("select-stock", handler);
+
+    // Initial load of paper trading account
+    fetchPaperAccount().then(setPaperAccount).catch(console.error);
+
+    // Listen for paper trading triggers from any stock card or table
+    const tradeHandler = (e: any) => {
+      if (e.detail?.ticker) {
+        setModalTradeTicker(e.detail.ticker);
+        setModalTradeType(e.detail.type || "BUY");
+        setGlobalTradeModalOpen(true);
+      }
+    };
+    window.addEventListener("open-paper-trade", tradeHandler);
+
+    return () => {
+      window.removeEventListener("select-stock", handler);
+      window.removeEventListener("open-paper-trade", tradeHandler);
+    };
   }, [selectedTicker]);
 
   // Inject Custom Headline
@@ -200,6 +226,7 @@ export default function Home() {
           { id: "opportunities", label: "🏠 Opportunities" },
           { id: "shortterm", label: "⚡ Short-Term Alpha" },
           { id: "multibagger", label: "🚀 Multi-Bagger Picks" },
+          { id: "papertrading", label: "📈 Paper Trading" },
           { id: "research", label: "🔬 AI Research" },
           { id: "heatmap", label: "🔮 Probability Treemap" },
           { id: "stream", label: "📡 Live Console" },
@@ -294,6 +321,40 @@ export default function Home() {
           <MultiBaggerPicks onSelectStock={handleSelectStock} />
         </div>
       )}
+
+      {activeTab === "papertrading" && (
+        <div className="animate-fade-in">
+          <PaperTradingDashboard 
+            stocks={stocks} 
+            onSelectStock={(t) => {
+              handleSelectStock(t);
+              setActiveTab("research");
+            }} 
+          />
+        </div>
+      )}
+
+      {/* Global Trade Execution Modal */}
+      {(() => {
+        const modalStock = stocks.find((s) => s.ticker === modalTradeTicker);
+        const modalHolding = paperAccount?.holdings.find((h) => h.ticker === modalTradeTicker);
+        const modalPrice = modalStock?.price || modalHolding?.current_price || 1000.0;
+        const modalOwnedQty = modalHolding?.quantity || 0;
+        return (
+          <TradeModal
+            isOpen={globalTradeModalOpen}
+            onClose={() => setGlobalTradeModalOpen(false)}
+            ticker={modalTradeTicker}
+            initialOrderType={modalTradeType}
+            currentPrice={modalPrice}
+            availableCash={paperAccount?.available_cash ?? 100000.0}
+            ownedQuantity={modalOwnedQty}
+            onTradeExecuted={(updated) => {
+              setPaperAccount(updated);
+            }}
+          />
+        );
+      })()}
 
     </div>
   );

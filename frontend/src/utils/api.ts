@@ -592,4 +592,147 @@ export async function fetchGeneratedPortfolio(amount: number, style: string): Pr
   return res.json();
 }
 
+// ==========================================
+// PAPER TRADING SYSTEM INTERFACES & METHODS
+// ==========================================
+
+export interface PaperHolding {
+  ticker: string;
+  sector: string;
+  market_cap: string;
+  quantity: number;
+  avg_buy_price: number;
+  current_price: number;
+  total_invested: number;
+  market_value: number;
+  unrealized_pnl: number;
+  unrealized_pnl_pct: number;
+  day_change_pct: number;
+}
+
+export interface PaperAccount {
+  user_id: string;
+  initial_capital: number;
+  available_cash: number;
+  total_invested: number;
+  portfolio_market_value: number;
+  total_portfolio_value: number;
+  realized_pnl: number;
+  unrealized_pnl: number;
+  total_pnl: number;
+  total_pnl_pct: number;
+  holdings: PaperHolding[];
+  holdings_count: number;
+  is_simulated: boolean;
+  last_updated: string;
+  last_updated_formatted: string;
+  market_session: string;
+  is_market_open: boolean;
+}
+
+export interface PaperTransaction {
+  id: string;
+  user_id: string;
+  ticker: string;
+  order_type: "BUY" | "SELL" | "RESET";
+  quantity: number;
+  execution_price: number;
+  total_amount: number;
+  realized_pnl: number;
+  timestamp: string;
+  formatted_time: string;
+  status: string;
+  notes?: string;
+}
+
+export function getPaperUserId(): string {
+  if (typeof window === "undefined") return "default_trader";
+  try {
+    let id = localStorage.getItem("vanguard_paper_user_id");
+    if (!id) {
+      id = "user_" + Math.random().toString(36).substring(2, 10);
+      localStorage.setItem("vanguard_paper_user_id", id);
+    }
+    return id;
+  } catch {
+    return "default_trader";
+  }
+}
+
+export async function fetchPaperAccount(userId?: string): Promise<PaperAccount> {
+  const uid = userId || getPaperUserId();
+  const res = await fetch(`${getApiBase()}/api/paper-trading/account?user_id=${encodeURIComponent(uid)}`, {
+    cache: "no-store",
+    headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch paper trading account (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function executePaperOrder(
+  userId: string,
+  ticker: string,
+  orderType: "BUY" | "SELL",
+  quantity: number
+): Promise<{ success: boolean; order: any; account: PaperAccount }> {
+  const uid = userId || getPaperUserId();
+  const res = await fetch(`${getApiBase()}/api/paper-trading/order`, {
+    method: "POST",
+    headers: { 
+      "Content-Type": "application/json",
+      "Cache-Control": "no-cache"
+    },
+    body: JSON.stringify({
+      user_id: uid,
+      ticker: ticker.toUpperCase(),
+      order_type: orderType.toUpperCase(),
+      quantity
+    })
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.detail || data.message || "Failed to execute paper trade");
+  }
+  return data;
+}
+
+export async function fetchPaperTransactions(
+  userId?: string,
+  orderType?: "BUY" | "SELL"
+): Promise<PaperTransaction[]> {
+  const uid = userId || getPaperUserId();
+  let url = `${getApiBase()}/api/paper-trading/transactions?user_id=${encodeURIComponent(uid)}`;
+  if (orderType) {
+    url += `&order_type=${encodeURIComponent(orderType)}`;
+  }
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch transaction history (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function resetPaperAccount(userId?: string): Promise<{ success: boolean; message: string; account: PaperAccount }> {
+  const uid = userId || getPaperUserId();
+  const res = await fetch(`${getApiBase()}/api/paper-trading/reset`, {
+    method: "POST",
+    headers: { 
+      "Content-Type": "application/json",
+      "Cache-Control": "no-cache"
+    },
+    body: JSON.stringify({ user_id: uid })
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.detail || data.message || "Failed to reset paper account");
+  }
+  return data;
+}
+
+
 

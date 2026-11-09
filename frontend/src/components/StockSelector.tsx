@@ -99,7 +99,30 @@ export default function StockSelector({ stocks, selectedTicker, onSelect }: Stoc
                 {/* Header row */}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontWeight: "700", fontSize: "14px", color: isActive ? "var(--accent-ml)" : "var(--color-text-primary)" }}>{stock.ticker}</span>
-                  <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>₹{stock.price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>₹{stock.price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (typeof window !== "undefined") {
+                          window.dispatchEvent(new CustomEvent("open-paper-trade", { detail: { ticker: stock.ticker, type: "BUY" } }));
+                        }
+                      }}
+                      style={{
+                        padding: "2px 6px",
+                        borderRadius: "4px",
+                        fontSize: "9px",
+                        fontWeight: "800",
+                        background: "rgba(16, 185, 129, 0.15)",
+                        color: "var(--color-buy)",
+                        border: "1px solid var(--color-buy)",
+                        cursor: "pointer"
+                      }}
+                      title="Buy in Paper Trading"
+                    >
+                      BUY
+                    </button>
+                  </div>
                 </div>
                 
                 {/* Score & recommendation row */}

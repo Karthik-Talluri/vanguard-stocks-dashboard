@@ -57,6 +57,7 @@ export default function TopPicks({
               <th style={{ padding: "12px 16px", textAlign: "right" }}>Price</th>
               <th style={{ padding: "12px 16px", textAlign: "right" }}>Expected Return</th>
               <th style={{ padding: "12px 16px", textAlign: "right" }}>Risk Profile</th>
+              <th style={{ padding: "12px 16px", textAlign: "center" }}>Trade</th>
             </tr>
           </thead>
           <tbody>
@@ -111,6 +112,29 @@ export default function TopPicks({
                   </td>
                   <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: "600", color: "var(--color-text-secondary)" }}>
                     {risk}
+                  </td>
+                  <td style={{ padding: "12px 16px", textAlign: "center" }}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (typeof window !== "undefined") {
+                          window.dispatchEvent(new CustomEvent("open-paper-trade", { detail: { ticker: stock.ticker, type: "BUY" } }));
+                        }
+                      }}
+                      style={{
+                        padding: "4px 10px",
+                        borderRadius: "6px",
+                        fontSize: "11px",
+                        fontWeight: "800",
+                        background: "rgba(16, 185, 129, 0.15)",
+                        border: "1px solid var(--color-buy)",
+                        color: "var(--color-buy)",
+                        cursor: "pointer",
+                        transition: "all 0.15s"
+                      }}
+                    >
+                      + BUY
+                    </button>
                   </td>
                 </tr>
               );

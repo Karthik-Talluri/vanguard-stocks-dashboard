@@ -925,7 +925,27 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
                         </div>
                       </div>
 
-                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: "6px" }}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (typeof window !== "undefined") {
+                              window.dispatchEvent(new CustomEvent("open-paper-trade", { detail: { ticker: item.ticker, type: "BUY" } }));
+                            }
+                          }}
+                          style={{
+                            padding: "4px 8px",
+                            background: "rgba(16, 185, 129, 0.15)",
+                            border: "1px solid var(--color-buy)",
+                            borderRadius: "4px",
+                            fontSize: "10px",
+                            color: "var(--color-buy)",
+                            fontWeight: "800",
+                            cursor: "pointer"
+                          }}
+                        >
+                          + BUY
+                        </button>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -968,8 +988,27 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
                           fontWeight: "700"
                         }}>{selectedStock.sector || ""}</span>
                       </div>
-                      <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
-                        Current Spot: <span style={{ fontWeight: "800", color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>₹{(selectedStock.price || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", marginTop: "2px", display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span>Current Spot: <strong style={{ color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>₹{(selectedStock.price || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
+                        <button
+                          onClick={() => {
+                            if (typeof window !== "undefined" && selectedStock.ticker) {
+                              window.dispatchEvent(new CustomEvent("open-paper-trade", { detail: { ticker: selectedStock.ticker, type: "BUY" } }));
+                            }
+                          }}
+                          style={{
+                            padding: "2px 8px",
+                            background: "var(--color-buy)",
+                            border: "none",
+                            borderRadius: "4px",
+                            fontSize: "10px",
+                            color: "#fff",
+                            fontWeight: "800",
+                            cursor: "pointer"
+                          }}
+                        >
+                          + BUY
+                        </button>
                       </div>
                     </div>
 

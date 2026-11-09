@@ -196,11 +196,52 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
           {/* Hero Score & Strategy Summary */}
           <div className="glass-panel" style={{ padding: "20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
-              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ fontSize: "24px", fontWeight: "900", color: "var(--color-text-primary)" }}>{detail.ticker}</span>
                 <span style={{ fontSize: "11px", fontWeight: "700", color: "var(--color-text-secondary)", background: "rgba(0,0,0,0.05)", padding: "2px 8px", borderRadius: "20px", whiteSpace: "nowrap" }}>
                   Spot: ₹{detail.spot_price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
+                <div style={{ display: "flex", gap: "6px", marginLeft: "4px" }}>
+                  <button
+                    onClick={() => {
+                      if (typeof window !== "undefined") {
+                        window.dispatchEvent(new CustomEvent("open-paper-trade", { detail: { ticker: detail.ticker, type: "BUY" } }));
+                      }
+                    }}
+                    style={{
+                      padding: "4px 10px",
+                      borderRadius: "6px",
+                      fontSize: "11px",
+                      fontWeight: "800",
+                      background: "var(--color-buy)",
+                      border: "none",
+                      color: "#ffffff",
+                      cursor: "pointer",
+                      boxShadow: "0 2px 6px rgba(16, 185, 129, 0.3)"
+                    }}
+                  >
+                    + BUY {detail.ticker}
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (typeof window !== "undefined") {
+                        window.dispatchEvent(new CustomEvent("open-paper-trade", { detail: { ticker: detail.ticker, type: "SELL" } }));
+                      }
+                    }}
+                    style={{
+                      padding: "4px 10px",
+                      borderRadius: "6px",
+                      fontSize: "11px",
+                      fontWeight: "800",
+                      background: "rgba(239, 68, 68, 0.12)",
+                      border: "1px solid var(--color-sell)",
+                      color: "var(--color-sell)",
+                      cursor: "pointer"
+                    }}
+                  >
+                    SELL
+                  </button>
+                </div>
               </div>
               
               {/* Displaying Setup Contract */}

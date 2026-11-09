@@ -3,8 +3,8 @@ import asyncio
 import random
 import pandas as pd
 import threading
-from typing import Dict, Any, List
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Response
+from typing import Dict, Any, List, Optional
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -1074,4 +1074,89 @@ def generate_portfolio(amount: float = 100000.0, style: str = "multibagger"):
         "rebalance_actions": rebalance_actions,
         "weekly_report": weekly_report
     }
+
+
+# ==========================================
+# PAPER TRADING SYSTEM (SIMULATION ENGINE)
+# ==========================================
+
+class PaperTradeOrderRequest(BaseModel):
+    user_id: str = "default_user"
+    ticker: str
+    order_type: str  # "BUY" or "SELL"
+    quantity: int
+
+class PaperTradeResetRequest(BaseModel):
+    user_id: str = "default_user"
+
+
+@app.get("/api/paper-trading/account")
+def get_paper_account(user_id: str = "default_user", response: Response = None):
+    """
+    Returns the virtual trading account details:
+    Cash, Total Portfolio Value, Holdings, Realized P&L, Unrealized P&L.
+    """
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    from paper_trading_service import get_account_summary
+    return get_account_summary(user_id)
+
+
+@app.post("/api/paper-trading/order")
+def place_paper_order(req: PaperTradeOrderRequest, response: Response = None):
+    """
+    Executes a simulated market order (BUY or SELL) using verified live NSE prices.
+    Deducts/credits virtual cash and maintains user holdings.
+    """
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    from paper_trading_service import execute_order, get_account_summary
+    try:
+        order_res = execute_order(req.user_id, req.ticker, req.order_type, req.quantity)
+        account = get_account_summary(req.user_id)
+        return {
+            "success": True,
+            "order": order_res,
+            "account": account
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Order execution error: {str(e)}")
+
+
+@app.get("/api/paper-trading/transactions")
+def get_paper_transactions(user_id: str = "default_user", order_type: Optional[str] = None, limit: int = 100, response: Response = None):
+    """
+    Returns the simulated order execution history with filters.
+    """
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    from paper_trading_service import get_transactions
+    return get_transactions(user_id, order_type=order_type, limit=limit)
+
+
+@app.post("/api/paper-trading/reset")
+def reset_paper_account(req: PaperTradeResetRequest, response: Response = None):
+    """
+    Resets the virtual trading account back to ₹1,00,000 cash and wipes active positions.
+    """
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    from paper_trading_service import reset_account
+    account = reset_account(req.user_id)
+    return {
+        "success": True,
+        "message": "Virtual trading account successfully reset to initial ₹1,00,000 capital.",
+        "account": account
+    }
+
 

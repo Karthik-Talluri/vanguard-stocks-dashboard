@@ -19,6 +19,7 @@ backend/*.pyc
 backend/uvicorn.log
 backend/.pytest_cache/
 backend/scratch/
+*.db
 
 # System and editor files
 .DS_Store
