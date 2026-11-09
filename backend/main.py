@@ -20,6 +20,8 @@ from market_service import (
     get_market_hours_status,
     get_all_live_stocks,
     get_live_stock_quote,
+    fetch_single_stock_quote,
+    VERIFIED_NSE_STOCK_FALLBACKS,
     NSE_STOCK_TICKERS
 )
 
@@ -385,7 +387,7 @@ def list_stocks(response: Response = None):
             if quote and quote.get("price"):
                 price_val = float(quote["price"])
                 prev_close_val = float(quote.get("prev_close") or price_val)
-                chg_pct_val = float(quote.get("change_pct") or ((price_val - prev_close_val) / prev_close_val * 100))
+                chg_pct_val = float(quote["change_pct"]) if quote.get("change_pct") is not None else ((price_val - prev_close_val) / prev_close_val * 100)
                 high_val = float(quote.get("high") or price_val)
                 low_val = float(quote.get("low") or price_val)
                 open_val = float(quote.get("open") or price_val)
@@ -624,10 +626,15 @@ def get_multibagger_picks():
 
 
 @app.get("/api/stocks/{ticker}")
-def get_stock_detail(ticker: str):
+def get_stock_detail(ticker: str, response: Response = None):
     """
     Returns full scorecard metrics, dynamic weightings, and agent reasonings with verified NSE quotes.
     """
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+
     import time
     ticker = ticker.upper()
     if ticker not in STOCKS_METADATA:
@@ -654,17 +661,22 @@ def get_stock_detail(ticker: str):
         analysis_copy["prev_close"] = quote.get("prev_close", quote["price"])
         analysis_copy["day_high"] = quote.get("high", quote["price"])
         analysis_copy["day_low"] = quote.get("low", quote["price"])
-        analysis_copy["change_pct"] = quote.get("change_pct", 0.0)
+        analysis_copy["change_pct"] = quote["change_pct"] if quote.get("change_pct") is not None else 0.0
         analysis_copy["source"] = quote.get("source", "nse_official")
     return analysis_copy
 
 @app.get("/api/stocks/{ticker}/chart")
-def get_stock_chart(ticker: str, interval: str = Query("1d", enum=["1d", "1h", "15m"])):
+def get_stock_chart(ticker: str, interval: str = Query("1d", enum=["1d", "1h", "15m"]), response: Response = None):
     """
     Returns chart data for selected stock and interval.
     1d: reads 365 days daily data.
     1h, 15m: generates intraday on-the-fly for the last 30 days.
     """
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+
     import numpy as np
     ticker = ticker.upper()
     if ticker not in STOCKS_METADATA:
@@ -874,24 +886,33 @@ def generate_portfolio(amount: float = 100000.0, style: str = "multibagger"):
     if not all_stocks:
         print("Cache cold, spawning Nifty 250 scanner in background...")
         threading.Thread(target=perform_nifty250_scan, daemon=True).start()
-        # Fallback to a mock set of stocks
-        fallback_tickers = ["REC", "BEL", "HAL", "PFC", "CDSL", "HUDCO", "RECLTD", "RVNL", "SJVN", "BHEL", "COFORGE", "ZENSARTECH", "LUPIN", "OBEROIRLTY", "ASIANPAINT"]
+        # Fallback to verified tickers with live quotes if Nifty 250 cache is cold
+        fallback_tickers = ["BEL", "HAL", "BHEL", "RVNL", "REC", "PFC", "CDSL", "HUDCO", "COFORGE", "LUPIN", "OBEROIRLTY", "ASIANPAINT", "TCS", "RELIANCE", "INFYS"]
+        live_stock_data = get_all_live_stocks()
+        quotes = live_stock_data.get("quotes", {})
         all_stocks = []
         for i, t in enumerate(fallback_tickers):
+            q = quotes.get(t) or get_live_stock_quote(t)
+            price_val = float(q["price"]) if (q and q.get("price")) else float(VERIFIED_NSE_STOCK_FALLBACKS.get(t, {}).get("price", 1000.0))
+            prev_close_val = float(q["prev_close"]) if (q and q.get("prev_close")) else price_val
+            chg_val = float(q["change_pct"]) if (q and q.get("change_pct") is not None) else round(((price_val - prev_close_val) / prev_close_val) * 100.0, 2)
+            target_val = round(price_val * 1.25, 2)
+            stop_val = round(price_val * 0.90, 2)
+            meta = STOCKS_METADATA.get(t, {})
             all_stocks.append({
                 "ticker": t,
-                "sector": "Industrials" if t in ["BEL", "HAL", "BHEL", "RVNL"] else "Financial Services" if t in ["REC", "PFC", "CDSL", "HUDCO", "RECLTD"] else "Technology" if t in ["COFORGE", "ZENSARTECH"] else "Healthcare" if t in ["LUPIN"] else "Real Estate" if t in ["OBEROIRLTY"] else "Utilities" if t in ["SJVN"] else "Basic Materials",
-                "market_cap": "large" if i < 5 else "mid" if i < 10 else "small",
-                "price": 350.0 + i * 50.0,
-                "change_pct": 1.5,
+                "sector": meta.get("sector") or ("Industrials" if t in ["BEL", "HAL", "BHEL", "RVNL"] else "Financial Services" if t in ["REC", "PFC", "CDSL", "HUDCO"] else "Technology" if t in ["COFORGE"] else "Healthcare" if t in ["LUPIN"] else "Real Estate" if t in ["OBEROIRLTY"] else "Consumer"),
+                "market_cap": meta.get("market_cap") or ("large" if i < 5 else "mid" if i < 10 else "small"),
+                "price": round(price_val, 2),
+                "change_pct": round(chg_val, 2),
                 "beta": 1.1,
                 "multibagger_score": 85.0 - i * 1.5,
                 "opportunity_score": 45.0 - i * 2.0,
                 "catalyst_score": 25.0 - i * 0.5,
                 "catalyst_text": "Strong upcoming order execution cycle.",
                 "expected_3m_return": 35.0 - i * 1.0,
-                "target_3m": 450.0,
-                "stop_loss": 310.0,
+                "target_3m": target_val,
+                "stop_loss": stop_val,
                 "delivery_pct": 45.0,
                 "rsi": 62.0,
                 "growth_sum": 30.0,

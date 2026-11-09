@@ -127,6 +127,16 @@ export default function DashboardHeader({ status, onRefresh, error }: DashboardH
             ({status.nifty_change >= 0 ? "+" : ""}{status.nifty_change.toFixed(2)}%)
           </span>
         </div>
+        {status.bank_nifty_close !== undefined && (
+          <div>
+            <span style={{ color: "var(--color-text-secondary)" }}>BANK NIFTY: </span>
+            <span style={{ fontWeight: "700" }}>{status.bank_nifty_close.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>
+            <span style={{ color: (status.bank_nifty_change ?? 0) >= 0 ? "var(--color-buy)" : "var(--color-sell)", marginLeft: "6px", fontWeight: "600" }}>
+              {status.bank_nifty_change_abs !== undefined ? `${status.bank_nifty_change_abs >= 0 ? "+" : ""}${status.bank_nifty_change_abs.toFixed(1)} ` : ""}
+              ({(status.bank_nifty_change ?? 0) >= 0 ? "+" : ""}{(status.bank_nifty_change ?? 0).toFixed(2)}%)
+            </span>
+          </div>
+        )}
         {status.nifty_open !== undefined && status.nifty_high !== undefined && status.nifty_low !== undefined && (
           <div>
             <span style={{ color: "var(--color-text-secondary)" }}>DAY RANGE: </span>
@@ -164,6 +174,11 @@ export default function DashboardHeader({ status, onRefresh, error }: DashboardH
         {(status.last_updated_formatted || status.last_updated) && (
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "var(--color-text-muted)", whiteSpace: "nowrap" }}>
             <span>🕒 Updated: {status.last_updated_formatted || status.last_updated}</span>
+            {status.source && (
+              <span style={{ textTransform: "uppercase", fontSize: "10px", padding: "1px 5px", borderRadius: "3px", background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}>
+                {status.source === "nse_live" ? "NSE Real-Time" : "NSE Official"}
+              </span>
+            )}
             {status.is_stale && (
               <span style={{ color: "var(--color-sell)", fontWeight: "600" }}>(Cached Session)</span>
             )}

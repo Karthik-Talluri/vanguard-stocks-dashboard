@@ -69,6 +69,13 @@ export interface MarketStatus {
   nifty_open?: number;
   nifty_high?: number;
   nifty_low?: number;
+  bank_nifty_close?: number;
+  bank_nifty_prev_close?: number;
+  bank_nifty_change_abs?: number;
+  bank_nifty_change?: number;
+  bank_nifty_open?: number;
+  bank_nifty_high?: number;
+  bank_nifty_low?: number;
   vix_prev_close?: number;
   vix_change?: number;
   sp500: number;
@@ -84,6 +91,7 @@ export interface MarketStatus {
   market_session_message?: string;
   is_stale?: boolean;
   warning?: string;
+  source?: string;
   reasoning: string[];
 }
 
@@ -177,12 +185,24 @@ export async function fetchStocks(): Promise<StockOverview[]> {
 }
 
 export async function fetchStockDetail(ticker: string): Promise<StockDetail> {
-  const res = await fetch(`${getApiBase()}/api/stocks/${ticker}`);
+  const res = await fetch(`${getApiBase()}/api/stocks/${ticker}`, {
+    cache: "no-store",
+    headers: {
+      "Cache-Control": "no-cache",
+      "Pragma": "no-cache"
+    }
+  });
   return res.json();
 }
 
 export async function fetchStockChart(ticker: string, interval: string): Promise<ChartDataPoint[]> {
-  const res = await fetch(`${getApiBase()}/api/stocks/${ticker}/chart?interval=${interval}`);
+  const res = await fetch(`${getApiBase()}/api/stocks/${ticker}/chart?interval=${interval}`, {
+    cache: "no-store",
+    headers: {
+      "Cache-Control": "no-cache",
+      "Pragma": "no-cache"
+    }
+  });
   return res.json();
 }
 
@@ -265,7 +285,10 @@ export interface BTSTData {
 }
 
 export async function fetchBTSTData(): Promise<BTSTData> {
-  const res = await fetch(`${getApiBase()}/api/btst`);
+  const res = await fetch(`${getApiBase()}/api/btst`, {
+    cache: "no-store",
+    headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+  });
   if (!res.ok) throw new Error("Failed to fetch BTST data");
   return res.json();
 }
@@ -394,13 +417,19 @@ export interface FuturesDetail {
 }
 
 export async function fetchFuturesOpportunities(): Promise<FuturesOpportunity[]> {
-  const res = await fetch(`${getApiBase()}/api/futures-income/opportunities`);
+  const res = await fetch(`${getApiBase()}/api/futures-income/opportunities`, {
+    cache: "no-store",
+    headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+  });
   if (!res.ok) throw new Error("Failed to fetch futures opportunities");
   return res.json();
 }
 
 export async function fetchFuturesDetail(ticker: string): Promise<FuturesDetail> {
-  const res = await fetch(`${getApiBase()}/api/futures-income/detail/${ticker}`);
+  const res = await fetch(`${getApiBase()}/api/futures-income/detail/${ticker}`, {
+    cache: "no-store",
+    headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+  });
   if (!res.ok) throw new Error("Failed to fetch futures detail");
   return res.json();
 }
@@ -434,7 +463,10 @@ export interface ShortTermPicksResponse {
 }
 
 export async function fetchShortTermPicks(): Promise<ShortTermPicksResponse> {
-  const res = await fetch(`${getApiBase()}/api/short-term-picks`);
+  const res = await fetch(`${getApiBase()}/api/short-term-picks`, {
+    cache: "no-store",
+    headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+  });
   if (!res.ok) throw new Error("Failed to fetch short term picks");
   return res.json();
 }
@@ -498,7 +530,10 @@ export interface MultiBaggerResponse {
 }
 
 export async function fetchMultiBaggerPicks(): Promise<MultiBaggerResponse> {
-  const res = await fetch(`${getApiBase()}/api/multibagger-picks`);
+  const res = await fetch(`${getApiBase()}/api/multibagger-picks`, {
+    cache: "no-store",
+    headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+  });
   if (!res.ok) throw new Error("Failed to fetch multi-bagger picks");
   return res.json();
 }
@@ -549,7 +584,10 @@ export interface PortfolioResponse {
 }
 
 export async function fetchGeneratedPortfolio(amount: number, style: string): Promise<PortfolioResponse> {
-  const res = await fetch(`${getApiBase()}/api/portfolio/generate?amount=${amount}&style=${style}`);
+  const res = await fetch(`${getApiBase()}/api/portfolio/generate?amount=${amount}&style=${style}`, {
+    cache: "no-store",
+    headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+  });
   if (!res.ok) throw new Error("Failed to fetch optimized portfolio");
   return res.json();
 }

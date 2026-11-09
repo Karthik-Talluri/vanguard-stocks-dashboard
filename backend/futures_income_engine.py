@@ -2,7 +2,7 @@ import os
 import math
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 # Standard lot sizes for Nifty 50 F&O stocks
 LOT_SIZES = {
@@ -460,7 +460,7 @@ class FuturesIncomeEngine:
             "candidates": candidates
         }
 
-    def generate_backtest_results(self, ticker: str) -> Dict[str, Any]:
+    def generate_backtest_results(self, ticker: str, spot: Optional[float] = None) -> Dict[str, Any]:
         """Generates deterministic, stable backtest summary and trade logs based on stable MD5 hashing."""
         import hashlib
         import numpy as np
@@ -540,16 +540,15 @@ class FuturesIncomeEngine:
         trades_list = []
         running_equity = 0.0
         
-        # Pricing reference
-        base_spot = 1000.0
-        if ticker == "RELIANCE": base_spot = 2400.0
-        elif ticker == "TCS": base_spot = 3400.0
-        elif ticker == "INFYS": base_spot = 1500.0
-        elif ticker == "HDFCBANK": base_spot = 1600.0
-        elif ticker == "ICICIBANK": base_spot = 950.0
-        elif ticker == "SBIN": base_spot = 580.0
-        elif ticker == "ITC": base_spot = 440.0
-        elif ticker == "BHARTIARTL": base_spot = 1874.0
+        # Pricing reference using live spot or verified NSE fallback
+        if spot is not None and spot > 0:
+            base_spot = spot
+        else:
+            try:
+                from market_service import VERIFIED_NSE_STOCK_FALLBACKS
+                base_spot = VERIFIED_NSE_STOCK_FALLBACKS.get(ticker, {}).get("price", 1000.0)
+            except Exception:
+                base_spot = 1000.0
         
         lot_size = LOT_SIZES.get(ticker, 500)
         margin_blocked = base_spot * lot_size * 0.20
@@ -650,8 +649,8 @@ class FuturesIncomeEngine:
         lot_size = get_lot_size(ticker, spot)
         margin_blocked = spot * lot_size * 0.20
         
-        # Backtest statistics
-        backtest_res = self.generate_backtest_results(ticker)
+        # Backtest statistics with live spot reference
+        backtest_res = self.generate_backtest_results(ticker, spot=spot)
         
         # Short-term BTST / 2-day Swing Recommendation integration
         from agents.btst_engine import calculate_btst_metrics
