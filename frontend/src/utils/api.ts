@@ -93,6 +93,7 @@ export interface MarketStatus {
   warning?: string;
   source?: string;
   reasoning: string[];
+  last_synced?: number;
 }
 
 export interface NewsArticle {
@@ -882,5 +883,9 @@ export async function resetPaperAccount(userId?: string): Promise<{ success: boo
   return data;
 }
 
-
+export async function syncLiveData(): Promise<{ status: string; message: string; synced_stocks: number; timestamp: number }> {
+  const res = await fetch(`${getApiBase()}/api/market/sync-live`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to trigger live sync");
+  return res.json();
+}
 

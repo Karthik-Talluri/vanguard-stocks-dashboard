@@ -63,7 +63,9 @@ def read_root():
             "/api/futures-income/opportunities",
             "/api/short-term-picks",
             "/api/multibagger-picks",
-            "/api/health"
+            "/api/health",
+            "/api/paper-trading/users",
+            "/api/paper-trading/account"
         ]
     }
 
@@ -72,7 +74,11 @@ def read_root():
 def health_check():
     return {"status": "healthy"}
 
-DATA_DIR = "data"
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BACKEND_DIR, "data")
+ROOT_DATA_DIR = os.path.join(os.path.dirname(BACKEND_DIR), "data")
+if not os.path.exists(DATA_DIR) and os.path.exists(ROOT_DATA_DIR):
+    DATA_DIR = ROOT_DATA_DIR
 engine = MasterScoringEngine()
 
 # Thread locks for each ticker to coordinate concurrent calculations
@@ -108,13 +114,58 @@ mock_overrides = {
     "S&P500_5d_ret": None
 }
 
-# In-memory cache for live yfinance prices to prevent rate-limiting (10s TTL)
+# In-memory cache for live yfinance prices: ticker -> (timestamp, last_price, volume, prev_close)
 LIVE_PRICE_CACHE = {}
-LIVE_PRICE_CACHE_TTL = 10.0
+LIVE_PRICE_CACHE_TTL = 30.0
+LAST_LIVE_SYNC_TIME = 0.0
 
 # In-memory cache for stock analysis results to prevent CPU bottleneck (30s TTL)
 ANALYSIS_CACHE = {}
 ANALYSIS_CACHE_TTL = 30.0
+
+def fetch_live_market_data():
+    """
+    Fast batch updater: queries current live prices & day performance from Yahoo Finance
+    for all tickers and key indices, updating LIVE_PRICE_CACHE and market status.
+    """
+    global LAST_LIVE_SYNC_TIME
+    import time
+    import yfinance as yf
+    
+    symbols_map = {}
+    for ticker in STOCKS_METADATA.keys():
+        if ticker == "INFYS": s = "INFY.NS"
+        elif ticker == "TATAMOTORS": s = "TMPV.NS"
+        elif ticker == "MM": s = "M&M.NS"
+        elif ticker == "BAJAJ_AUTO": s = "BAJAJ-AUTO.NS"
+        else: s = f"{ticker}.NS"
+        symbols_map[s] = ticker
+    
+    # Also include major indices
+    symbols_map["^NSEI"] = "^NSEI"
+    symbols_map["^INDIAVIX"] = "^INDIAVIX"
+    symbols_map["^GSPC"] = "^GSPC"
+    symbols_map["^IXIC"] = "^IXIC"
+
+    sym_list = list(symbols_map.keys())
+    now = time.time()
+    try:
+        data = yf.download(sym_list, period="2d", progress=False)
+        if not data.empty and "Close" in data:
+            closes = data["Close"]
+            volumes = data["Volume"] if "Volume" in data else None
+            for sym, ticker in symbols_map.items():
+                if sym in closes.columns:
+                    series = closes[sym].dropna()
+                    if len(series) >= 1:
+                        last_price = float(series.iloc[-1])
+                        prev_price = float(series.iloc[-2]) if len(series) >= 2 else last_price
+                        vol = float(volumes[sym].dropna().iloc[-1]) if volumes is not None and sym in volumes.columns and len(volumes[sym].dropna()) > 0 else 0.0
+                        LIVE_PRICE_CACHE[ticker] = (now, last_price, vol, prev_price)
+            LAST_LIVE_SYNC_TIME = now
+            print(f"Updated live prices for {len(LIVE_PRICE_CACHE)} tickers/indices.")
+    except Exception as e:
+        print(f"Error updating live batch market data: {e}")
 
 def load_data_for_ticker(ticker: str, force_live: bool = False, calculate_inds: bool = True) -> Dict[str, pd.DataFrame]:
     """
@@ -127,39 +178,96 @@ def load_data_for_ticker(ticker: str, force_live: bool = False, calculate_inds: 
     macro_indices = read_shared_csv(os.path.join(DATA_DIR, "macro_indices.csv"))
     news_feed = read_shared_csv(os.path.join(DATA_DIR, "news_feed.csv"))
     
-    # Integrate live verified NSE stock price
+    import time
+    import numpy as np
+    now = time.time()
+    cached_entry = LIVE_PRICE_CACHE.get(ticker)
+    
+    live_price = None
+    live_volume = None
+    live_open = None
+    live_high = None
+    live_low = None
+
+    # 1. Integrate live verified NSE stock price
     try:
         quote = get_live_stock_quote(ticker)
         if quote and quote.get("price"):
-            latest_idx = stock_daily.index[-1]
             live_price = float(quote["price"])
-            stock_daily.loc[latest_idx, "Close"] = live_price
             if quote.get("high"):
-                stock_daily.loc[latest_idx, "High"] = max(float(quote["high"]), live_price)
+                live_high = max(float(quote["high"]), live_price)
             if quote.get("low"):
-                stock_daily.loc[latest_idx, "Low"] = min(float(quote["low"]), live_price)
+                live_low = min(float(quote["low"]), live_price)
             if quote.get("open"):
-                stock_daily.loc[latest_idx, "Open"] = float(quote["open"])
+                live_open = float(quote["open"])
             if quote.get("volume"):
-                stock_daily.loc[latest_idx, "Volume"] = int(quote["volume"])
+                live_volume = float(quote["volume"])
     except Exception as e:
         pass
+
+    # 2. Check live price cache or force_live yfinance fallback
+    if live_price is None:
+        if cached_entry and (now - cached_entry[0] < LIVE_PRICE_CACHE_TTL):
+            live_price, live_volume = cached_entry[1], cached_entry[2]
+        elif force_live:
+            yf_symbol = f"{ticker}.NS"
+            if ticker == "INFYS": yf_symbol = "INFY.NS"
+            elif ticker == "TATAMOTORS": yf_symbol = "TMPV.NS"
+            elif ticker == "MM": yf_symbol = "M&M.NS"
+            elif ticker == "BAJAJ_AUTO": yf_symbol = "BAJAJ-AUTO.NS"
+            try:
+                import yfinance as yf
+                t = yf.Ticker(yf_symbol)
+                info_dict = dict(t.fast_info)
+                live_price = info_dict.get("lastPrice") or info_dict.get("last_price") or info_dict.get("close")
+                live_volume = info_dict.get("lastVolume") or info_dict.get("last_volume") or info_dict.get("volume")
+                prev_close = info_dict.get("previousClose") or live_price
+                if live_price is not None and not np.isnan(live_price):
+                    LIVE_PRICE_CACHE[ticker] = (now, float(live_price), float(live_volume) if live_volume else 0.0, float(prev_close))
+            except Exception as e:
+                if cached_entry:
+                    live_price, live_volume = cached_entry[1], cached_entry[2]
+        elif cached_entry:
+            live_price, live_volume = cached_entry[1], cached_entry[2]
+
+    # Update daily stock dataframe with live price data
+    if live_price is not None and not np.isnan(live_price):
+        today_str = pd.Timestamp.now().strftime("%Y-%m-%d")
+        last_date_str = str(stock_daily["Date"].iloc[-1])
+        if last_date_str != today_str:
+            new_row = stock_daily.iloc[-1].copy()
+            new_row["Date"] = today_str
+            new_row["Close"] = live_price
+            if live_open is not None: new_row["Open"] = live_open
+            if live_high is not None: new_row["High"] = live_high
+            if live_low is not None: new_row["Low"] = live_low
+            if live_volume is not None and not np.isnan(live_volume):
+                new_row["Volume"] = live_volume
+            stock_daily = pd.concat([stock_daily, pd.DataFrame([new_row])], ignore_index=True)
+        else:
+            latest_idx = stock_daily.index[-1]
+            stock_daily.loc[latest_idx, "Close"] = live_price
+            if live_open is not None: stock_daily.loc[latest_idx, "Open"] = live_open
+            if live_high is not None: stock_daily.loc[latest_idx, "High"] = live_high
+            if live_low is not None: stock_daily.loc[latest_idx, "Low"] = live_low
+            if live_volume is not None and not np.isnan(live_volume):
+                stock_daily.loc[latest_idx, "Volume"] = live_volume
 
     # Sync latest live NIFTY and Macro indices if available
     try:
         live_mkt = get_live_market_data()
-        if not nifty_sectors.empty and "Nifty50" in nifty_sectors.columns:
+        if not nifty_sectors.empty and "Nifty50" in nifty_sectors.columns and live_mkt.get("nifty_close"):
             nifty_sectors.loc[nifty_sectors.index[-1], "Nifty50"] = live_mkt["nifty_close"]
         if not macro_indices.empty:
-            if "IndiaVIX" in macro_indices.columns:
+            if "IndiaVIX" in macro_indices.columns and live_mkt.get("vix"):
                 macro_indices.loc[macro_indices.index[-1], "IndiaVIX"] = live_mkt["vix"]
-            if "NASDAQ" in macro_indices.columns:
+            if "NASDAQ" in macro_indices.columns and live_mkt.get("nasdaq"):
                 macro_indices.loc[macro_indices.index[-1], "NASDAQ"] = live_mkt["nasdaq"]
-            if "SP500" in macro_indices.columns:
+            if "SP500" in macro_indices.columns and live_mkt.get("sp500"):
                 macro_indices.loc[macro_indices.index[-1], "SP500"] = live_mkt["sp500"]
-            if "DXY" in macro_indices.columns:
+            if "DXY" in macro_indices.columns and live_mkt.get("dxy"):
                 macro_indices.loc[macro_indices.index[-1], "DXY"] = live_mkt["dxy"]
-            if "US10Y" in macro_indices.columns:
+            if "US10Y" in macro_indices.columns and live_mkt.get("us10y"):
                 macro_indices.loc[macro_indices.index[-1], "US10Y"] = live_mkt["us10y"]
     except Exception as e:
         pass
@@ -239,9 +347,15 @@ def prewarm_analysis_cache():
 def startup_event():
     """
     Triggers an initial sync with Yahoo Finance and warms the analysis cache in the background on startup.
+    Runs recurring hourly full synchronization and live price updater.
     """
     import threading
+    import time
     def background_task():
+        try:
+            fetch_live_market_data()
+        except Exception as e:
+            print(f"Startup live market fetch error: {e}")
         try:
             run_full_sync("1y")
         except Exception as e:
@@ -258,6 +372,46 @@ def startup_event():
     print("Application startup: spawning background sync and analysis pre-warming task...")
     threading.Thread(target=background_task, daemon=True).start()
 
+    # Recurring hourly full synchronization
+    def hourly_sync_worker():
+        while True:
+            try:
+                time.sleep(3600)  # Every 1 hour
+                print("Running scheduled hourly market sync...")
+                run_full_sync("1y", force=True)
+                ANALYSIS_CACHE.clear()
+                fetch_live_market_data()
+            except Exception as e:
+                print(f"Hourly sync error: {e}")
+
+    threading.Thread(target=hourly_sync_worker, daemon=True).start()
+
+    # Recurring 30-second live price tick poller
+    def live_tick_worker():
+        while True:
+            try:
+                time.sleep(30)
+                fetch_live_market_data()
+            except Exception as e:
+                print(f"Live tick worker error: {e}")
+
+    threading.Thread(target=live_tick_worker, daemon=True).start()
+
+@app.post("/api/market/sync-live")
+def trigger_live_sync():
+    """
+    On-demand user trigger: immediately fetches live prices from Yahoo Finance,
+    clears analysis cache, and updates market status.
+    """
+    ANALYSIS_CACHE.clear()
+    fetch_live_market_data()
+    return {
+        "status": "success",
+        "message": "Live market data successfully refreshed",
+        "synced_stocks": len(LIVE_PRICE_CACHE),
+        "timestamp": LAST_LIVE_SYNC_TIME
+    }
+
 @app.post("/api/admin/sync")
 def trigger_sync():
     """
@@ -266,7 +420,7 @@ def trigger_sync():
     import threading
     ANALYSIS_CACHE.clear()
     print("Manual API trigger: spawning background Yahoo Finance synchronization task...")
-    threading.Thread(target=run_full_sync, args=("1y",), daemon=True).start()
+    threading.Thread(target=run_full_sync, args=("1y", True), daemon=True).start()
     return {"status": "success", "message": "Yahoo Finance synchronization started in background"}
 
 
@@ -300,6 +454,19 @@ def get_market_status(response: Response = None):
     # 1. Fetch live market data (with cache)
     live_data = get_live_market_data()
     
+    # Overlay live quotes from cache if present and newer
+    if "^NSEI" in LIVE_PRICE_CACHE:
+        entry = LIVE_PRICE_CACHE["^NSEI"]
+        live_data["nifty_close"] = float(entry[1])
+        if len(entry) > 3 and entry[3] > 0:
+            live_data["nifty_change"] = float((entry[1] - entry[3]) / entry[3] * 100)
+    if "^INDIAVIX" in LIVE_PRICE_CACHE:
+        live_data["vix"] = float(LIVE_PRICE_CACHE["^INDIAVIX"][1])
+    if "^GSPC" in LIVE_PRICE_CACHE:
+        live_data["sp500"] = float(LIVE_PRICE_CACHE["^GSPC"][1])
+    if "^IXIC" in LIVE_PRICE_CACHE:
+        live_data["nasdaq"] = float(LIVE_PRICE_CACHE["^IXIC"][1])
+
     # 2. Check for manual regime simulation overrides
     effective_vix = mock_overrides["IndiaVIX"] if mock_overrides["IndiaVIX"] is not None else live_data["vix"]
     effective_nasdaq = live_data["nasdaq"]
@@ -336,6 +503,7 @@ def get_market_status(response: Response = None):
     result["nasdaq"] = float(effective_nasdaq)
     result["regime"] = regime
     result["reasoning"] = reasoning
+    result["last_synced"] = LAST_LIVE_SYNC_TIME
     return result
 
 @app.get("/api/stocks")
@@ -383,7 +551,7 @@ def list_stocks(response: Response = None):
                     analysis = engine.analyze_stock(ticker, data)
                     ANALYSIS_CACHE[ticker] = (now, analysis, 0, 0)
             
-            # Extract verified prices from the official NSE quote
+            # Extract verified prices from official NSE quote or LIVE_PRICE_CACHE
             if quote and quote.get("price"):
                 price_val = float(quote["price"])
                 prev_close_val = float(quote.get("prev_close") or price_val)
@@ -392,16 +560,25 @@ def list_stocks(response: Response = None):
                 low_val = float(quote.get("low") or price_val)
                 open_val = float(quote.get("open") or price_val)
                 quote_source = quote.get("source", "nse_official")
+            elif ticker in LIVE_PRICE_CACHE:
+                cached_live = LIVE_PRICE_CACHE[ticker]
+                price_val = float(cached_live[1])
+                prev_close_val = float(cached_live[3]) if len(cached_live) > 3 and cached_live[3] > 0 else price_val
+                chg_pct_val = float((price_val - prev_close_val) / prev_close_val * 100) if prev_close_val > 0 else 0.0
+                high_val = price_val
+                low_val = price_val
+                open_val = price_val
+                quote_source = "live_sync"
             else:
-                stock_df = data["stock_daily"]
+                hist_data = load_data_for_ticker(ticker, calculate_inds=False)
+                stock_df = hist_data["stock_daily"]
                 price_val = float(stock_df["Close"].iloc[-1])
-                prev_close_val = float(stock_df["Close"].iloc[-2])
-                chg_pct_val = float((price_val - prev_close_val) / prev_close_val * 100.0)
+                prev_close_val = float(stock_df["Close"].iloc[-2]) if len(stock_df) > 1 else price_val
+                chg_pct_val = float((price_val - prev_close_val) / prev_close_val * 100.0) if prev_close_val > 0 else 0.0
                 high_val = float(stock_df["High"].iloc[-1])
                 low_val = float(stock_df["Low"].iloc[-1])
                 open_val = float(stock_df["Open"].iloc[-1])
                 quote_source = "historical_daily"
-
             # Get ML Agent probabilities
             ml_agent = analysis.get("agents", {}).get("ML Prediction Agent", {})
             ml_metrics = ml_agent.get("metrics", {})
@@ -666,7 +843,7 @@ def get_stock_detail(ticker: str, response: Response = None):
     return analysis_copy
 
 @app.get("/api/stocks/{ticker}/chart")
-def get_stock_chart(ticker: str, interval: str = Query("1d", enum=["1d", "1h", "15m"]), response: Response = None):
+def get_stock_chart(ticker: str, interval: str = Query("1d"), response: Response = None):
     """
     Returns chart data for selected stock and interval.
     1d: reads 365 days daily data.
