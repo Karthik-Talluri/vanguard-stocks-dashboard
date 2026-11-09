@@ -103,8 +103,8 @@ export default function TopPicks({
                   <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: "800", color: "var(--color-text-primary)" }}>
                     {stock.master_score}%
                   </td>
-                  <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: "700" }}>
-                    ₹{stock.price.toLocaleString()}
+                  <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: "700", whiteSpace: "nowrap" }}>
+                    ₹{stock.price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
                   <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: "700", color: "var(--color-buy)" }}>
                     {expectedReturn}

@@ -99,7 +99,7 @@ export default function StockSelector({ stocks, selectedTicker, onSelect }: Stoc
                 {/* Header row */}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontWeight: "700", fontSize: "14px", color: isActive ? "var(--accent-ml)" : "var(--color-text-primary)" }}>{stock.ticker}</span>
-                  <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)" }}>₹{stock.price.toLocaleString(undefined, { minimumFractionDigits: 1 })}</span>
+                  <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>₹{stock.price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
                 
                 {/* Score & recommendation row */}

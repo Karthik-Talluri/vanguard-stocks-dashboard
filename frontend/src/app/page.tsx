@@ -105,7 +105,7 @@ export default function Home() {
             setStocks((prev) => 
               prev.map((s) => 
                 s.ticker === data.ticker 
-                  ? { ...s, price: data.simulated_price } 
+                  ? { ...s, price: data.price || data.simulated_price, change_pct: data.pct_change !== undefined ? data.pct_change : s.change_pct } 
                   : s
               )
             );

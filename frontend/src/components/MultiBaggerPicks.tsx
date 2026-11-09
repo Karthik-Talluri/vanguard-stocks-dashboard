@@ -909,7 +909,7 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "6px", textAlign: "center", background: "rgba(0,0,0,0.01)", padding: "6px", borderRadius: "6px" }}>
                         <div>
                           <span style={{ fontSize: "8px", color: "var(--color-text-muted)", display: "block" }}>PRICE</span>
-                          <span style={{ fontSize: "11px", fontWeight: "700" }}>₹{item.price.toFixed(1)}</span>
+                          <span style={{ fontSize: "11px", fontWeight: "700", whiteSpace: "nowrap" }}>₹{item.price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                         </div>
                         <div>
                           <span style={{ fontSize: "8px", color: "var(--color-text-muted)", display: "block" }}>CAP</span>
@@ -969,7 +969,7 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
                         }}>{selectedStock.sector || ""}</span>
                       </div>
                       <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
-                        Current Spot: <span style={{ fontWeight: "800", color: "var(--color-text-primary)" }}>₹{(selectedStock.price || 0).toLocaleString("en-IN")}</span>
+                        Current Spot: <span style={{ fontWeight: "800", color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>₹{(selectedStock.price || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </div>
                     </div>
 

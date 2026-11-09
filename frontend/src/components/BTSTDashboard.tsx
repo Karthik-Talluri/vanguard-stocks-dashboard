@@ -162,7 +162,7 @@ export default function BTSTDashboard({ onSelectStock }: BTSTDashboardProps) {
                   </span>
                 </div>
                 <div style={{ fontSize: "13px", color: "var(--color-text-muted)", marginTop: "2px" }}>
-                  Last Close: <span style={{ fontWeight: "700", color: "var(--color-text-primary)" }}>₹{selectedStock.price.toLocaleString()}</span>
+                  Last Close: <span style={{ fontWeight: "700", color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>₹{selectedStock.price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               </div>
 

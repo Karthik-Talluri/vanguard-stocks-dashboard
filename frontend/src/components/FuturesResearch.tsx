@@ -198,8 +198,8 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
             <div>
               <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                 <span style={{ fontSize: "24px", fontWeight: "900", color: "var(--color-text-primary)" }}>{detail.ticker}</span>
-                <span style={{ fontSize: "11px", fontWeight: "700", color: "var(--color-text-secondary)", background: "rgba(0,0,0,0.05)", padding: "2px 8px", borderRadius: "20px" }}>
-                  Spot: ₹{detail.spot_price.toLocaleString("en-IN")}
+                <span style={{ fontSize: "11px", fontWeight: "700", color: "var(--color-text-secondary)", background: "rgba(0,0,0,0.05)", padding: "2px 8px", borderRadius: "20px", whiteSpace: "nowrap" }}>
+                  Spot: ₹{detail.spot_price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
               

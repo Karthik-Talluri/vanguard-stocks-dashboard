@@ -279,7 +279,7 @@ export default function ShortTermPicks({ onSelectStock }: ShortTermPicksProps) {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px", textAlign: "center", background: "rgba(0,0,0,0.01)", padding: "6px", borderRadius: "6px" }}>
                     <div>
                       <div style={{ fontSize: "8px", color: "var(--color-text-muted)" }}>PRICE</div>
-                      <div style={{ fontSize: "12px", fontWeight: "700", color: "var(--color-text-primary)" }}>₹{item.price.toFixed(1)}</div>
+                      <div style={{ fontSize: "12px", fontWeight: "700", color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>₹{item.price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: "8px", color: "var(--color-text-muted)" }}>CHANGE</div>
@@ -336,7 +336,7 @@ export default function ShortTermPicks({ onSelectStock }: ShortTermPicksProps) {
                     }}>{selectedStock.sector}</span>
                   </div>
                   <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
-                    Current spot: <span style={{ fontWeight: "800", color: "var(--color-text-primary)" }}>₹{selectedStock.price.toLocaleString("en-IN")}</span>
+                    Current spot: <span style={{ fontWeight: "800", color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>₹{selectedStock.price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                 </div>
 
