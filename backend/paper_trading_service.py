@@ -26,7 +26,7 @@ IST = ZoneInfo("Asia/Kolkata")
 
 AVAILABLE_USERS = [
     {"id": "usr_karthik", "name": "Karthik"},
-    {"id": "usr_ravindra", "name": "Ravindra"},
+    {"id": "usr_rahul", "name": "Rahul"},
     {"id": "usr_priya", "name": "Priya"},
     {"id": "usr_arun", "name": "Arun"},
     {"id": "usr_sneha", "name": "Sneha"},
@@ -38,21 +38,38 @@ AVAILABLE_USERS = [
 ]
 
 USER_NAME_MAP = {u["id"]: u["name"] for u in AVAILABLE_USERS}
+USER_NAME_MAP["usr_ravindra"] = "Rahul"
+
+def normalize_user_id(user_id: str) -> str:
+    """Normalizes and maps user IDs (including backward compatibility)."""
+    uid = (user_id or "usr_karthik").strip()
+    if uid == "usr_ravindra":
+        return "usr_rahul"
+    return uid
 
 def get_db_path() -> str:
     """Returns persistent SQLite path or fallback to /tmp in serverless environments."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
     data_dir = os.path.join(base_dir, "data")
+    primary_path = os.path.join(data_dir, "paper_trading.db")
+    tmp_path = "/tmp/paper_trading.db"
     try:
         os.makedirs(data_dir, exist_ok=True)
-        primary_path = os.path.join(data_dir, "paper_trading.db")
         test_file = os.path.join(data_dir, ".write_test")
         with open(test_file, "w") as f:
             f.write("ok")
         os.remove(test_file)
         return primary_path
     except Exception:
-        return "/tmp/paper_trading.db"
+        # In serverless environments, /var/task is read-only.
+        # If /tmp/paper_trading.db does not exist and primary_path exists, seed /tmp from it
+        if os.path.exists(primary_path) and not os.path.exists(tmp_path):
+            try:
+                import shutil
+                shutil.copy2(primary_path, tmp_path)
+            except Exception:
+                pass
+        return tmp_path
 
 def init_db():
     """Initializes tables for accounts, holdings, and transactions."""
@@ -121,6 +138,7 @@ def _get_connection():
 
 def get_or_create_account(conn: sqlite3.Connection, user_id: str) -> Dict[str, Any]:
     """Ensures an account exists for user_id with initial ₹1,00,000 cash."""
+    user_id = normalize_user_id(user_id)
     cursor = conn.cursor()
     cursor.execute("SELECT user_id, cash, realized_pnl, created_at, updated_at FROM accounts WHERE user_id = ?", (user_id,))
     row = cursor.fetchone()
@@ -145,6 +163,7 @@ def execute_order(user_id: str, ticker: str, order_type: str, quantity: int) -> 
     Executes a simulated buy or sell market order atomically.
     Validates virtual cash balance and share holdings.
     """
+    user_id = normalize_user_id(user_id)
     ticker = ticker.upper().strip()
     order_type = order_type.upper().strip()
 
@@ -287,6 +306,7 @@ def get_account_summary(user_id: str) -> Dict[str, Any]:
     - Profit/Loss Percentage
     - Active Holdings with live Mark-to-Market valuation
     """
+    user_id = normalize_user_id(user_id)
     with _DB_LOCK:
         conn = _get_connection()
         try:
@@ -381,6 +401,7 @@ def get_account_summary(user_id: str) -> Dict[str, Any]:
 
 def get_transactions(user_id: str, order_type: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
     """Returns simulated transaction history for user_id with optional BUY/SELL filter."""
+    user_id = normalize_user_id(user_id)
     with _DB_LOCK:
         conn = _get_connection()
         try:
@@ -402,6 +423,7 @@ def get_transactions(user_id: str, order_type: Optional[str] = None, limit: int 
 
 def reset_account(user_id: str) -> Dict[str, Any]:
     """Resets user virtual account to ₹1,00,000 cash and wipes active holdings."""
+    user_id = normalize_user_id(user_id)
     now_dt = datetime.now(IST)
     now_iso = now_dt.isoformat()
     now_formatted = now_dt.strftime("%d %b %Y, %I:%M:%S %p IST")
@@ -431,6 +453,89 @@ def reset_account(user_id: str) -> Dict[str, Any]:
             ))
 
             conn.commit()
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            conn.close()
+
+    return get_account_summary(user_id)
+
+def sync_user_account(user_id: str, client_account: Dict[str, Any], client_transactions: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """
+    Synchronizes client-persisted state with the serverless SQLite database.
+    Ensures that if a serverless container is fresh and has 0 holdings/transactions,
+    the persisted holdings and transactions are safely restored into the SQLite tables.
+    """
+    user_id = normalize_user_id(user_id)
+    now_dt = datetime.now(IST)
+    now_iso = now_dt.isoformat()
+
+    client_holdings = client_account.get("holdings", []) if isinstance(client_account, dict) else []
+    client_cash = float(client_account.get("available_cash", INITIAL_VIRTUAL_CAPITAL)) if isinstance(client_account, dict) else INITIAL_VIRTUAL_CAPITAL
+    client_realized = float(client_account.get("realized_pnl", 0.0)) if isinstance(client_account, dict) else 0.0
+
+    with _DB_LOCK:
+        conn = _get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("BEGIN IMMEDIATE")
+
+            # Check server state
+            cursor.execute("SELECT COUNT(*) as cnt FROM holdings WHERE user_id = ?", (user_id,))
+            server_holdings_count = cursor.fetchone()["cnt"]
+
+            # If server has 0 holdings, but client has persisted data:
+            if server_holdings_count == 0 and (len(client_holdings) > 0 or client_cash != INITIAL_VIRTUAL_CAPITAL):
+                # Restore account
+                cursor.execute("""
+                    INSERT INTO accounts (user_id, cash, realized_pnl, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET
+                        cash = excluded.cash,
+                        realized_pnl = excluded.realized_pnl,
+                        updated_at = excluded.updated_at
+                """, (user_id, client_cash, client_realized, now_iso, now_iso))
+
+                # Restore holdings
+                for h in client_holdings:
+                    t = h.get("ticker", "").upper().strip()
+                    q = int(h.get("quantity", 0))
+                    avg_p = float(h.get("avg_buy_price", 0.0))
+                    tot_inv = float(h.get("total_invested", q * avg_p))
+                    if t and q > 0:
+                        cursor.execute("""
+                            INSERT INTO holdings (user_id, ticker, quantity, avg_buy_price, total_invested, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(user_id, ticker) DO UPDATE SET
+                                quantity = excluded.quantity,
+                                avg_buy_price = excluded.avg_buy_price,
+                                total_invested = excluded.total_invested,
+                                updated_at = excluded.updated_at
+                        """, (user_id, t, q, avg_p, tot_inv, now_iso))
+
+                # Restore transactions
+                if client_transactions:
+                    for tx in client_transactions:
+                        tx_id = tx.get("id") or f"TX-{uuid.uuid4().hex[:8].upper()}"
+                        tx_ticker = tx.get("ticker", "").upper()
+                        tx_type = tx.get("order_type", "BUY").upper()
+                        tx_qty = int(tx.get("quantity", 0))
+                        tx_price = float(tx.get("execution_price", 0.0))
+                        tx_tot = float(tx.get("total_amount", tx_qty * tx_price))
+                        tx_pnl = float(tx.get("realized_pnl", 0.0))
+                        tx_time = tx.get("timestamp", now_iso)
+                        tx_formatted = tx.get("formatted_time", now_dt.strftime("%d %b %Y, %I:%M:%S %p IST"))
+                        tx_status = tx.get("status", "EXECUTED")
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO transactions (
+                                id, user_id, ticker, order_type, quantity, execution_price, total_amount, realized_pnl, timestamp, formatted_time, status, notes
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            tx_id, user_id, tx_ticker, tx_type, tx_qty, tx_price, tx_tot, tx_pnl, tx_time, tx_formatted, tx_status, 'SYNC_RESTORED'
+                        ))
+
+                conn.commit()
         except Exception as e:
             conn.rollback()
             raise e

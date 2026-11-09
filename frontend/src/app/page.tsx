@@ -194,10 +194,19 @@ export default function Home() {
     };
     window.addEventListener("paper-user-changed", userChangeHandler);
 
+    // Listen for paper trading order execution across the dashboard
+    const accountUpdateHandler = (e: any) => {
+      if (e.detail?.account) {
+        setPaperAccount(e.detail.account);
+      }
+    };
+    window.addEventListener("paper-account-updated", accountUpdateHandler);
+
     return () => {
       window.removeEventListener("select-stock", handler);
       window.removeEventListener("open-paper-trade", tradeHandler);
       window.removeEventListener("paper-user-changed", userChangeHandler);
+      window.removeEventListener("paper-account-updated", accountUpdateHandler);
     };
   }, [selectedTicker, activePaperUser?.id]);
 
@@ -338,6 +347,8 @@ export default function Home() {
         <div className="animate-fade-in">
           <PaperTradingDashboard 
             stocks={stocks} 
+            initialAccount={paperAccount}
+            onAccountUpdated={setPaperAccount}
             onSelectStock={(t) => {
               handleSelectStock(t);
               setActiveTab("research");

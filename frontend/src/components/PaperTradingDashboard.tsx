@@ -13,21 +13,25 @@ import {
   TradingUser,
   PAPER_TRADING_USERS,
   getActiveTradingUser,
-  setActiveTradingUserId
+  setActiveTradingUserId,
+  getLocalPaperAccount,
+  getLocalPaperTransactions
 } from "../utils/api";
 import TradeModal from "./TradeModal";
 
 interface PaperTradingDashboardProps {
   stocks: StockOverview[];
+  initialAccount?: PaperAccount | null;
+  onAccountUpdated?: (account: PaperAccount) => void;
   onSelectStock?: (ticker: string) => void;
 }
 
-export default function PaperTradingDashboard({ stocks, onSelectStock }: PaperTradingDashboardProps) {
+export default function PaperTradingDashboard({ stocks, initialAccount, onAccountUpdated, onSelectStock }: PaperTradingDashboardProps) {
   const [activeUser, setActiveUser] = useState<TradingUser>(getActiveTradingUser());
-  const [account, setAccount] = useState<PaperAccount | null>(null);
-  const [transactions, setTransactions] = useState<PaperTransaction[]>([]);
+  const [account, setAccount] = useState<PaperAccount | null>(() => initialAccount || getLocalPaperAccount(getActiveTradingUser().id));
+  const [transactions, setTransactions] = useState<PaperTransaction[]>(() => getLocalPaperTransactions(getActiveTradingUser().id));
   const [txFilter, setTxFilter] = useState<"ALL" | "BUY" | "SELL">("ALL");
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(!initialAccount && !account);
   const [error, setError] = useState<string | null>(null);
   const [resetConfirming, setResetConfirming] = useState<boolean>(false);
   const [resetting, setResetting] = useState<boolean>(false);
@@ -37,15 +41,37 @@ export default function PaperTradingDashboard({ stocks, onSelectStock }: PaperTr
     const handleUserChanged = (e: any) => {
       if (e.detail && e.detail.id !== activeUser.id) {
         setActiveUser(e.detail);
+        const cached = getLocalPaperAccount(e.detail.id);
+        if (cached) setAccount(cached);
+        const cachedTxs = getLocalPaperTransactions(e.detail.id);
+        if (cachedTxs.length > 0) setTransactions(cachedTxs);
       }
     };
     window.addEventListener("paper-user-changed", handleUserChanged);
     return () => window.removeEventListener("paper-user-changed", handleUserChanged);
   }, [activeUser.id]);
 
+  // Listen for real-time order updates executed anywhere in the dashboard
+  useEffect(() => {
+    const handleAccountUpdated = (e: any) => {
+      if (e.detail?.userId === activeUser.id && e.detail?.account) {
+        setAccount(e.detail.account);
+        if (onAccountUpdated) onAccountUpdated(e.detail.account);
+        const filterType = txFilter === "ALL" ? undefined : txFilter;
+        fetchPaperTransactions(activeUser.id, filterType).then(setTransactions);
+      }
+    };
+    window.addEventListener("paper-account-updated", handleAccountUpdated);
+    return () => window.removeEventListener("paper-account-updated", handleAccountUpdated);
+  }, [activeUser.id, txFilter, onAccountUpdated]);
+
   const handleUserChange = (newUserId: string) => {
     const user = setActiveTradingUserId(newUserId);
     setActiveUser(user);
+    const cached = getLocalPaperAccount(user.id);
+    setAccount(cached);
+    const cachedTxs = getLocalPaperTransactions(user.id);
+    setTransactions(cachedTxs);
   };
 
   // Trade Modal state
@@ -54,12 +80,15 @@ export default function PaperTradingDashboard({ stocks, onSelectStock }: PaperTr
   const [tradeType, setTradeType] = useState<"BUY" | "SELL">("BUY");
   const [selectedQuickStock, setSelectedQuickStock] = useState<string>("");
 
-  const loadData = async () => {
+  const loadData = async (isManualRefresh = false) => {
     try {
-      setLoading(true);
+      if (isManualRefresh || !account) {
+        setLoading(true);
+      }
       setError(null);
       const acc = await fetchPaperAccount(activeUser.id);
       setAccount(acc);
+      if (onAccountUpdated) onAccountUpdated(acc);
 
       const filterType = txFilter === "ALL" ? undefined : txFilter;
       const txs = await fetchPaperTransactions(activeUser.id, filterType);
@@ -74,7 +103,7 @@ export default function PaperTradingDashboard({ stocks, onSelectStock }: PaperTr
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 15000);
+    const interval = setInterval(() => loadData(false), 15000);
     return () => clearInterval(interval);
   }, [activeUser.id, txFilter]);
 
@@ -265,7 +294,7 @@ export default function PaperTradingDashboard({ stocks, onSelectStock }: PaperTr
           </button>
 
           <button
-            onClick={loadData}
+            onClick={() => loadData(true)}
             style={{
               fontSize: "12px",
               padding: "8px 14px",
@@ -700,6 +729,7 @@ export default function PaperTradingDashboard({ stocks, onSelectStock }: PaperTr
         userId={activeUser.id}
         onTradeExecuted={(updatedAccount) => {
           setAccount(updatedAccount);
+          if (onAccountUpdated) onAccountUpdated(updatedAccount);
           fetchPaperTransactions(activeUser.id, txFilter === "ALL" ? undefined : txFilter).then(setTransactions);
         }}
       />

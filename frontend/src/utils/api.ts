@@ -653,7 +653,7 @@ export interface TradingUser {
 
 export const PAPER_TRADING_USERS: TradingUser[] = [
   { id: "usr_karthik", name: "Karthik" },
-  { id: "usr_ravindra", name: "Ravindra" },
+  { id: "usr_rahul", name: "Rahul" },
   { id: "usr_priya", name: "Priya" },
   { id: "usr_arun", name: "Arun" },
   { id: "usr_sneha", name: "Sneha" },
@@ -669,7 +669,8 @@ export const DEFAULT_PAPER_USER_ID = "usr_karthik";
 export function getActiveTradingUser(): TradingUser {
   if (typeof window === "undefined") return PAPER_TRADING_USERS[0];
   try {
-    const savedId = localStorage.getItem("vanguard_active_paper_user_id");
+    let savedId = localStorage.getItem("vanguard_active_paper_user_id");
+    if (savedId === "usr_ravindra") savedId = "usr_rahul";
     const found = PAPER_TRADING_USERS.find(u => u.id === savedId);
     if (found) return found;
     localStorage.setItem("vanguard_active_paper_user_id", DEFAULT_PAPER_USER_ID);
@@ -680,7 +681,8 @@ export function getActiveTradingUser(): TradingUser {
 }
 
 export function setActiveTradingUserId(userId: string): TradingUser {
-  const found = PAPER_TRADING_USERS.find(u => u.id === userId) || PAPER_TRADING_USERS[0];
+  let mappedId = userId === "usr_ravindra" ? "usr_rahul" : userId;
+  const found = PAPER_TRADING_USERS.find(u => u.id === mappedId) || PAPER_TRADING_USERS[0];
   if (typeof window !== "undefined") {
     try {
       localStorage.setItem("vanguard_active_paper_user_id", found.id);
@@ -696,16 +698,106 @@ export function getPaperUserId(): string {
   return getActiveTradingUser().id;
 }
 
-export async function fetchPaperAccount(userId?: string): Promise<PaperAccount> {
+const STORAGE_PREFIX = "vanguard_paper_v2_";
+
+export function getLocalPaperAccount(userId: string): PaperAccount | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(`${STORAGE_PREFIX}acc_${userId}`);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.error("Failed to read local paper account:", e);
+  }
+  return null;
+}
+
+export function saveLocalPaperAccount(userId: string, account: PaperAccount): void {
+  if (typeof window === "undefined" || !account) return;
+  try {
+    localStorage.setItem(`${STORAGE_PREFIX}acc_${userId}`, JSON.stringify(account));
+  } catch (e) {
+    console.error("Failed to save local paper account:", e);
+  }
+}
+
+export function getLocalPaperTransactions(userId: string): PaperTransaction[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(`${STORAGE_PREFIX}txs_${userId}`);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.error("Failed to read local paper transactions:", e);
+  }
+  return [];
+}
+
+export function saveLocalPaperTransactions(userId: string, txs: PaperTransaction[]): void {
+  if (typeof window === "undefined" || !txs) return;
+  try {
+    localStorage.setItem(`${STORAGE_PREFIX}txs_${userId}`, JSON.stringify(txs));
+  } catch (e) {
+    console.error("Failed to save local paper transactions:", e);
+  }
+}
+
+export async function syncPaperAccountWithBackend(
+  userId: string,
+  account: PaperAccount,
+  transactions?: PaperTransaction[]
+): Promise<PaperAccount> {
   const uid = userId || getPaperUserId();
-  const res = await fetch(`${getApiBase()}/api/paper-trading/account?user_id=${encodeURIComponent(uid)}`, {
-    cache: "no-store",
-    headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+  const res = await fetch(`${getApiBase()}/api/paper-trading/sync`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-cache"
+    },
+    body: JSON.stringify({
+      user_id: uid,
+      account,
+      transactions: transactions || []
+    })
   });
   if (!res.ok) {
-    throw new Error(`Failed to fetch paper trading account (${res.status})`);
+    return account;
   }
-  return res.json();
+  const data = await res.json();
+  if (data?.account) {
+    saveLocalPaperAccount(uid, data.account);
+    return data.account;
+  }
+  return account;
+}
+
+export async function fetchPaperAccount(userId?: string): Promise<PaperAccount> {
+  const uid = userId || getPaperUserId();
+  try {
+    const res = await fetch(`${getApiBase()}/api/paper-trading/account?user_id=${encodeURIComponent(uid)}`, {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to fetch paper trading account (${res.status})`);
+    }
+    const serverAcc: PaperAccount = await res.json();
+
+    // If serverless container was recycled and returned empty holdings,
+    // restore from local persisted snapshot if available
+    const localAcc = getLocalPaperAccount(uid);
+    if ((!serverAcc.holdings || serverAcc.holdings.length === 0) && localAcc && localAcc.holdings && localAcc.holdings.length > 0) {
+      const localTxs = getLocalPaperTransactions(uid);
+      const syncedAcc = await syncPaperAccountWithBackend(uid, localAcc, localTxs);
+      saveLocalPaperAccount(uid, syncedAcc);
+      return syncedAcc;
+    }
+
+    saveLocalPaperAccount(uid, serverAcc);
+    return serverAcc;
+  } catch (err) {
+    const cached = getLocalPaperAccount(uid);
+    if (cached) return cached;
+    throw err;
+  }
 }
 
 export async function executePaperOrder(
@@ -732,6 +824,9 @@ export async function executePaperOrder(
   if (!res.ok) {
     throw new Error(data.detail || data.message || "Failed to execute paper trade");
   }
+  if (data?.account) {
+    saveLocalPaperAccount(uid, data.account);
+  }
   return data;
 }
 
@@ -744,14 +839,26 @@ export async function fetchPaperTransactions(
   if (orderType) {
     url += `&order_type=${encodeURIComponent(orderType)}`;
   }
-  const res = await fetch(url, {
-    cache: "no-store",
-    headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to fetch transaction history (${res.status})`);
+  try {
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to fetch transaction history (${res.status})`);
+    }
+    const data: PaperTransaction[] = await res.json();
+    if (!orderType) {
+      saveLocalPaperTransactions(uid, data);
+    }
+    return data;
+  } catch (err) {
+    const cached = getLocalPaperTransactions(uid);
+    if (orderType) {
+      return cached.filter(t => t.order_type === orderType);
+    }
+    return cached;
   }
-  return res.json();
 }
 
 export async function resetPaperAccount(userId?: string): Promise<{ success: boolean; message: string; account: PaperAccount }> {
@@ -767,6 +874,10 @@ export async function resetPaperAccount(userId?: string): Promise<{ success: boo
   const data = await res.json();
   if (!res.ok) {
     throw new Error(data.detail || data.message || "Failed to reset paper account");
+  }
+  if (data?.account) {
+    saveLocalPaperAccount(uid, data.account);
+    saveLocalPaperTransactions(uid, []);
   }
   return data;
 }

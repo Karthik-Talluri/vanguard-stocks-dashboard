@@ -1089,6 +1089,11 @@ class PaperTradeOrderRequest(BaseModel):
 class PaperTradeResetRequest(BaseModel):
     user_id: str = "usr_karthik"
 
+class PaperTradeSyncRequest(BaseModel):
+    user_id: str = "usr_karthik"
+    account: Optional[Dict[str, Any]] = None
+    transactions: Optional[List[Dict[str, Any]]] = None
+
 
 @app.get("/api/paper-trading/users")
 def get_paper_users(response: Response = None):
@@ -1171,5 +1176,25 @@ def reset_paper_account(req: PaperTradeResetRequest, response: Response = None):
         "message": "Virtual trading account successfully reset to initial ₹1,00,000 capital.",
         "account": account
     }
+
+
+@app.post("/api/paper-trading/sync")
+def sync_paper_account(req: PaperTradeSyncRequest, response: Response = None):
+    """
+    Synchronizes client-persisted portfolio state with the serverless SQLite database.
+    Ensures zero data loss across container recycles, cold starts, and deployments.
+    """
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    from paper_trading_service import sync_user_account, normalize_user_id
+    uid = normalize_user_id(req.user_id)
+    account = sync_user_account(uid, req.account or {}, req.transactions)
+    return {
+        "success": True,
+        "account": account
+    }
+
 
 

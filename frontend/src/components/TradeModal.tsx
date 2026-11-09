@@ -93,6 +93,17 @@ export default function TradeModal({
     try {
       const res = await executePaperOrder(effectiveUserId, ticker, orderType, quantity);
       setSuccessMsg(`Simulated ${orderType} order for ${quantity} shares of ${ticker} executed successfully for ${activeUser.name}!`);
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("paper-account-updated", {
+          detail: {
+            userId: effectiveUserId,
+            account: res.account,
+            order: res.order
+          }
+        }));
+      }
+
       if (onTradeExecuted) {
         onTradeExecuted(res.account);
       }
