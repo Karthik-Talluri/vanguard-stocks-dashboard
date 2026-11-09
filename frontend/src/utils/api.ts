@@ -612,6 +612,7 @@ export interface PaperHolding {
 
 export interface PaperAccount {
   user_id: string;
+  user_name?: string;
   initial_capital: number;
   available_cash: number;
   total_invested: number;
@@ -645,18 +646,54 @@ export interface PaperTransaction {
   notes?: string;
 }
 
-export function getPaperUserId(): string {
-  if (typeof window === "undefined") return "default_trader";
+export interface TradingUser {
+  id: string;
+  name: string;
+}
+
+export const PAPER_TRADING_USERS: TradingUser[] = [
+  { id: "usr_karthik", name: "Karthik" },
+  { id: "usr_ravindra", name: "Ravindra" },
+  { id: "usr_priya", name: "Priya" },
+  { id: "usr_arun", name: "Arun" },
+  { id: "usr_sneha", name: "Sneha" },
+  { id: "usr_vamsi", name: "Vamsi" },
+  { id: "usr_harsha", name: "Harsha" },
+  { id: "usr_pooja", name: "Pooja" },
+  { id: "usr_sai", name: "Sai" },
+  { id: "usr_divya", name: "Divya" },
+];
+
+export const DEFAULT_PAPER_USER_ID = "usr_karthik";
+
+export function getActiveTradingUser(): TradingUser {
+  if (typeof window === "undefined") return PAPER_TRADING_USERS[0];
   try {
-    let id = localStorage.getItem("vanguard_paper_user_id");
-    if (!id) {
-      id = "user_" + Math.random().toString(36).substring(2, 10);
-      localStorage.setItem("vanguard_paper_user_id", id);
-    }
-    return id;
+    const savedId = localStorage.getItem("vanguard_active_paper_user_id");
+    const found = PAPER_TRADING_USERS.find(u => u.id === savedId);
+    if (found) return found;
+    localStorage.setItem("vanguard_active_paper_user_id", DEFAULT_PAPER_USER_ID);
+    return PAPER_TRADING_USERS[0];
   } catch {
-    return "default_trader";
+    return PAPER_TRADING_USERS[0];
   }
+}
+
+export function setActiveTradingUserId(userId: string): TradingUser {
+  const found = PAPER_TRADING_USERS.find(u => u.id === userId) || PAPER_TRADING_USERS[0];
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem("vanguard_active_paper_user_id", found.id);
+      window.dispatchEvent(new CustomEvent("paper-user-changed", { detail: found }));
+    } catch (e) {
+      console.error("Failed to save active paper user:", e);
+    }
+  }
+  return found;
+}
+
+export function getPaperUserId(): string {
+  return getActiveTradingUser().id;
 }
 
 export async function fetchPaperAccount(userId?: string): Promise<PaperAccount> {

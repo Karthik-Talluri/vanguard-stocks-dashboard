@@ -9,7 +9,11 @@ import {
   fetchPaperTransactions, 
   resetPaperAccount,
   getPaperUserId,
-  StockOverview
+  StockOverview,
+  TradingUser,
+  PAPER_TRADING_USERS,
+  getActiveTradingUser,
+  setActiveTradingUserId
 } from "../utils/api";
 import TradeModal from "./TradeModal";
 
@@ -19,6 +23,7 @@ interface PaperTradingDashboardProps {
 }
 
 export default function PaperTradingDashboard({ stocks, onSelectStock }: PaperTradingDashboardProps) {
+  const [activeUser, setActiveUser] = useState<TradingUser>(getActiveTradingUser());
   const [account, setAccount] = useState<PaperAccount | null>(null);
   const [transactions, setTransactions] = useState<PaperTransaction[]>([]);
   const [txFilter, setTxFilter] = useState<"ALL" | "BUY" | "SELL">("ALL");
@@ -26,6 +31,22 @@ export default function PaperTradingDashboard({ stocks, onSelectStock }: PaperTr
   const [error, setError] = useState<string | null>(null);
   const [resetConfirming, setResetConfirming] = useState<boolean>(false);
   const [resetting, setResetting] = useState<boolean>(false);
+
+  // Synchronize if active user is changed from another component
+  useEffect(() => {
+    const handleUserChanged = (e: any) => {
+      if (e.detail && e.detail.id !== activeUser.id) {
+        setActiveUser(e.detail);
+      }
+    };
+    window.addEventListener("paper-user-changed", handleUserChanged);
+    return () => window.removeEventListener("paper-user-changed", handleUserChanged);
+  }, [activeUser.id]);
+
+  const handleUserChange = (newUserId: string) => {
+    const user = setActiveTradingUserId(newUserId);
+    setActiveUser(user);
+  };
 
   // Trade Modal state
   const [tradeModalOpen, setTradeModalOpen] = useState<boolean>(false);
@@ -37,12 +58,11 @@ export default function PaperTradingDashboard({ stocks, onSelectStock }: PaperTr
     try {
       setLoading(true);
       setError(null);
-      const userId = getPaperUserId();
-      const acc = await fetchPaperAccount(userId);
+      const acc = await fetchPaperAccount(activeUser.id);
       setAccount(acc);
 
       const filterType = txFilter === "ALL" ? undefined : txFilter;
-      const txs = await fetchPaperTransactions(userId, filterType);
+      const txs = await fetchPaperTransactions(activeUser.id, filterType);
       setTransactions(txs);
     } catch (err: any) {
       console.error("Error loading paper trading data:", err);
@@ -56,7 +76,7 @@ export default function PaperTradingDashboard({ stocks, onSelectStock }: PaperTr
     loadData();
     const interval = setInterval(loadData, 15000);
     return () => clearInterval(interval);
-  }, [txFilter]);
+  }, [activeUser.id, txFilter]);
 
   const handleOpenTrade = (ticker: string, type: "BUY" | "SELL") => {
     setTradeTicker(ticker);
@@ -67,14 +87,13 @@ export default function PaperTradingDashboard({ stocks, onSelectStock }: PaperTr
   const handleReset = async () => {
     setResetting(true);
     try {
-      const userId = getPaperUserId();
-      const res = await resetPaperAccount(userId);
+      const res = await resetPaperAccount(activeUser.id);
       setAccount(res.account);
-      const txs = await fetchPaperTransactions(userId);
+      const txs = await fetchPaperTransactions(activeUser.id);
       setTransactions(txs);
       setResetConfirming(false);
     } catch (err: any) {
-      alert("Failed to reset account: " + (err?.message || "Unknown error"));
+      alert(`Failed to reset ${activeUser.name}'s account: ` + (err?.message || "Unknown error"));
     } finally {
       setResetting(false);
     }
@@ -100,6 +119,76 @@ export default function PaperTradingDashboard({ stocks, onSelectStock }: PaperTr
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }} className="animate-fade-in">
       
+      {/* Multi-User Selector Header Card */}
+      <div className="glass-panel" style={{
+        padding: "16px 22px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        flexWrap: "wrap",
+        gap: "14px",
+        background: "linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(15, 23, 42, 0.7) 100%)",
+        border: "1px solid rgba(99, 102, 241, 0.3)",
+        borderRadius: "12px"
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ fontSize: "20px" }}>👤</span>
+            <label 
+              htmlFor="select-trading-user"
+              style={{ fontSize: "13px", fontWeight: "800", color: "var(--color-text-primary)", letterSpacing: "-0.2px" }}
+            >
+              Select Trading User:
+            </label>
+          </div>
+
+          <select
+            id="select-trading-user"
+            value={activeUser.id}
+            onChange={(e) => handleUserChange(e.target.value)}
+            style={{
+              fontSize: "13px",
+              fontWeight: "700",
+              padding: "8px 14px",
+              borderRadius: "8px",
+              background: "var(--bg-card)",
+              color: "#a5b4fc",
+              border: "1px solid rgba(99, 102, 241, 0.4)",
+              cursor: "pointer",
+              outline: "none",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.2)"
+            }}
+          >
+            {PAPER_TRADING_USERS.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name} (₹1,00,000 Portfolio)
+              </option>
+            ))}
+          </select>
+
+          <div style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "8px",
+            padding: "5px 12px",
+            borderRadius: "16px",
+            background: "rgba(16, 185, 129, 0.12)",
+            border: "1px solid rgba(16, 185, 129, 0.3)",
+            color: "var(--color-buy)",
+            fontSize: "12px",
+            fontWeight: "700"
+          }}>
+            <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--color-buy)" }}></span>
+            <span>Active Account: <strong style={{ color: "#ffffff" }}>{activeUser.name}</strong></span>
+          </div>
+        </div>
+
+        <div style={{ fontSize: "11px", color: "var(--color-text-muted)", display: "flex", alignItems: "center", gap: "6px" }}>
+          <span>🛡️</span>
+          <span>Shared-device user selector (separate simulated portfolios, not authenticated).</span>
+        </div>
+      </div>
+
       {/* Top Banner & Quick Controls */}
       <div className="glass-panel" style={{ padding: "18px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px" }}>
         <div>
@@ -207,9 +296,9 @@ export default function PaperTradingDashboard({ stocks, onSelectStock }: PaperTr
           gap: "12px"
         }}>
           <div>
-            <div style={{ fontWeight: "800", color: "var(--color-sell)", fontSize: "14px" }}>⚠️ Confirm Account Reset</div>
+            <div style={{ fontWeight: "800", color: "var(--color-sell)", fontSize: "14px" }}>⚠️ Confirm Account Reset for {activeUser.name}</div>
             <div style={{ fontSize: "12px", color: "var(--color-text-primary)", marginTop: "2px" }}>
-              Are you sure? This will wipe your simulated holdings and restore virtual cash back to ₹1,00,000.
+              Are you sure? This will wipe <strong>{activeUser.name}</strong>&apos;s simulated holdings and restore virtual cash back to ₹1,00,000 without affecting other traders.
             </div>
           </div>
           <div style={{ display: "flex", gap: "8px" }}>
@@ -243,7 +332,7 @@ export default function PaperTradingDashboard({ stocks, onSelectStock }: PaperTr
                 cursor: "pointer"
               }}
             >
-              {resetting ? "Resetting..." : "Yes, Reset Account"}
+              {resetting ? "Resetting..." : `Yes, Reset ${activeUser.name}'s Account`}
             </button>
           </div>
         </div>
@@ -608,12 +697,13 @@ export default function PaperTradingDashboard({ stocks, onSelectStock }: PaperTr
         currentPrice={activePrice}
         availableCash={account?.available_cash ?? 100000.0}
         ownedQuantity={activeOwnedQty}
+        userId={activeUser.id}
         onTradeExecuted={(updatedAccount) => {
           setAccount(updatedAccount);
-          const userId = getPaperUserId();
-          fetchPaperTransactions(userId, txFilter === "ALL" ? undefined : txFilter).then(setTransactions);
+          fetchPaperTransactions(activeUser.id, txFilter === "ALL" ? undefined : txFilter).then(setTransactions);
         }}
       />
     </div>
   );
 }
+

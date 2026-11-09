@@ -1,7 +1,13 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { executePaperOrder, PaperAccount, getPaperUserId } from "../utils/api";
+import { 
+  executePaperOrder, 
+  PaperAccount, 
+  getPaperUserId, 
+  PAPER_TRADING_USERS, 
+  getActiveTradingUser 
+} from "../utils/api";
 
 interface TradeModalProps {
   isOpen: boolean;
@@ -11,6 +17,7 @@ interface TradeModalProps {
   currentPrice: number;
   availableCash: number;
   ownedQuantity: number;
+  userId?: string;
   onTradeExecuted?: (account: PaperAccount) => void;
 }
 
@@ -22,6 +29,7 @@ export default function TradeModal({
   currentPrice,
   availableCash,
   ownedQuantity,
+  userId,
   onTradeExecuted
 }: TradeModalProps) {
   const [orderType, setOrderType] = useState<"BUY" | "SELL">(initialOrderType);
@@ -30,6 +38,9 @@ export default function TradeModal({
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const effectiveUserId = userId || getPaperUserId();
+  const activeUser = PAPER_TRADING_USERS.find(u => u.id === effectiveUserId) || getActiveTradingUser();
 
   useEffect(() => {
     if (isOpen) {
@@ -80,9 +91,8 @@ export default function TradeModal({
     setLoading(true);
     setError(null);
     try {
-      const userId = getPaperUserId();
-      const res = await executePaperOrder(userId, ticker, orderType, quantity);
-      setSuccessMsg(`Simulated ${orderType} order for ${quantity} shares of ${ticker} executed successfully!`);
+      const res = await executePaperOrder(effectiveUserId, ticker, orderType, quantity);
+      setSuccessMsg(`Simulated ${orderType} order for ${quantity} shares of ${ticker} executed successfully for ${activeUser.name}!`);
       if (onTradeExecuted) {
         onTradeExecuted(res.account);
       }
@@ -166,6 +176,25 @@ export default function TradeModal({
           >
             ✕
           </button>
+        </div>
+
+        {/* Active Trader Profile Pill */}
+        <div style={{
+          padding: "6px 12px",
+          borderRadius: "8px",
+          background: "rgba(99, 102, 241, 0.12)",
+          border: "1px solid rgba(99, 102, 241, 0.3)",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          fontSize: "12px",
+          color: "var(--color-text-primary)"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span>👤</span>
+            <span>Trading Account: <strong style={{ color: "#a5b4fc" }}>{activeUser.name}</strong></span>
+          </div>
+          <span style={{ fontSize: "11px", color: "var(--color-text-muted)" }}>₹1,00,000 Virtual Capital</span>
         </div>
 
         {/* Disclaimer Banner */}
@@ -486,3 +515,4 @@ export default function TradeModal({
     </div>
   );
 }
+

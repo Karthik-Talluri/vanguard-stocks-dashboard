@@ -26,7 +26,7 @@ import ShortTermPicks from "../components/ShortTermPicks";
 import MultiBaggerPicks from "../components/MultiBaggerPicks";
 import PaperTradingDashboard from "../components/PaperTradingDashboard";
 import TradeModal from "../components/TradeModal";
-import { fetchPaperAccount, PaperAccount } from "../utils/api";
+import { fetchPaperAccount, PaperAccount, TradingUser, getActiveTradingUser } from "../utils/api";
 
 export default function Home() {
   const [stocks, setStocks] = useState<StockOverview[]>([]);
@@ -39,6 +39,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<"opportunities" | "shortterm" | "multibagger" | "papertrading" | "research" | "heatmap" | "stream" | "scanners">("opportunities");
 
   // Global Paper Trading Modal states
+  const [activePaperUser, setActivePaperUser] = useState<TradingUser>(getActiveTradingUser());
   const [globalTradeModalOpen, setGlobalTradeModalOpen] = useState(false);
   const [modalTradeTicker, setModalTradeTicker] = useState("RELIANCE");
   const [modalTradeType, setModalTradeType] = useState<"BUY" | "SELL">("BUY");
@@ -170,8 +171,9 @@ export default function Home() {
     };
     window.addEventListener("select-stock", handler);
 
-    // Initial load of paper trading account
-    fetchPaperAccount().then(setPaperAccount).catch(console.error);
+    // Initial load of paper trading account for current active user
+    const currentUid = activePaperUser?.id || getActiveTradingUser().id;
+    fetchPaperAccount(currentUid).then(setPaperAccount).catch(console.error);
 
     // Listen for paper trading triggers from any stock card or table
     const tradeHandler = (e: any) => {
@@ -183,11 +185,21 @@ export default function Home() {
     };
     window.addEventListener("open-paper-trade", tradeHandler);
 
+    // Listen for user switches across the dashboard
+    const userChangeHandler = (e: any) => {
+      if (e.detail) {
+        setActivePaperUser(e.detail);
+        fetchPaperAccount(e.detail.id).then(setPaperAccount).catch(console.error);
+      }
+    };
+    window.addEventListener("paper-user-changed", userChangeHandler);
+
     return () => {
       window.removeEventListener("select-stock", handler);
       window.removeEventListener("open-paper-trade", tradeHandler);
+      window.removeEventListener("paper-user-changed", userChangeHandler);
     };
-  }, [selectedTicker]);
+  }, [selectedTicker, activePaperUser?.id]);
 
   // Inject Custom Headline
   const handleInjectNews = async (e: React.FormEvent) => {
@@ -349,6 +361,7 @@ export default function Home() {
             currentPrice={modalPrice}
             availableCash={paperAccount?.available_cash ?? 100000.0}
             ownedQuantity={modalOwnedQty}
+            userId={activePaperUser.id}
             onTradeExecuted={(updated) => {
               setPaperAccount(updated);
             }}

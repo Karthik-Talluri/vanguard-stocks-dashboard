@@ -1081,17 +1081,30 @@ def generate_portfolio(amount: float = 100000.0, style: str = "multibagger"):
 # ==========================================
 
 class PaperTradeOrderRequest(BaseModel):
-    user_id: str = "default_user"
+    user_id: str = "usr_karthik"
     ticker: str
     order_type: str  # "BUY" or "SELL"
     quantity: int
 
 class PaperTradeResetRequest(BaseModel):
-    user_id: str = "default_user"
+    user_id: str = "usr_karthik"
+
+
+@app.get("/api/paper-trading/users")
+def get_paper_users(response: Response = None):
+    """
+    Returns the list of 10 available multi-user profiles for paper trading.
+    """
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    from paper_trading_service import AVAILABLE_USERS
+    return AVAILABLE_USERS
 
 
 @app.get("/api/paper-trading/account")
-def get_paper_account(user_id: str = "default_user", response: Response = None):
+def get_paper_account(user_id: str = "usr_karthik", response: Response = None):
     """
     Returns the virtual trading account details:
     Cash, Total Portfolio Value, Holdings, Realized P&L, Unrealized P&L.
@@ -1130,7 +1143,7 @@ def place_paper_order(req: PaperTradeOrderRequest, response: Response = None):
 
 
 @app.get("/api/paper-trading/transactions")
-def get_paper_transactions(user_id: str = "default_user", order_type: Optional[str] = None, limit: int = 100, response: Response = None):
+def get_paper_transactions(user_id: str = "usr_karthik", order_type: Optional[str] = None, limit: int = 100, response: Response = None):
     """
     Returns the simulated order execution history with filters.
     """

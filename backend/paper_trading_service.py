@@ -24,6 +24,21 @@ INITIAL_VIRTUAL_CAPITAL = 100000.0  # ₹1 Lakh
 _DB_LOCK = threading.Lock()
 IST = ZoneInfo("Asia/Kolkata")
 
+AVAILABLE_USERS = [
+    {"id": "usr_karthik", "name": "Karthik"},
+    {"id": "usr_ravindra", "name": "Ravindra"},
+    {"id": "usr_priya", "name": "Priya"},
+    {"id": "usr_arun", "name": "Arun"},
+    {"id": "usr_sneha", "name": "Sneha"},
+    {"id": "usr_vamsi", "name": "Vamsi"},
+    {"id": "usr_harsha", "name": "Harsha"},
+    {"id": "usr_pooja", "name": "Pooja"},
+    {"id": "usr_sai", "name": "Sai"},
+    {"id": "usr_divya", "name": "Divya"}
+]
+
+USER_NAME_MAP = {u["id"]: u["name"] for u in AVAILABLE_USERS}
+
 def get_db_path() -> str:
     """Returns persistent SQLite path or fallback to /tmp in serverless environments."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -82,6 +97,17 @@ def init_db():
                     notes TEXT DEFAULT 'PAPER_TRADING_SIMULATED'
                 )
             """)
+
+            # Pre-seed default accounts for the 10 multi-user profiles
+            now_iso = datetime.now(IST).isoformat()
+            for u in AVAILABLE_USERS:
+                cursor.execute("SELECT user_id FROM accounts WHERE user_id = ?", (u["id"],))
+                if not cursor.fetchone():
+                    cursor.execute(
+                        "INSERT INTO accounts (user_id, cash, realized_pnl, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                        (u["id"], INITIAL_VIRTUAL_CAPITAL, 0.0, now_iso, now_iso)
+                    )
+
             conn.commit()
 
 # Initialize on module load
@@ -330,8 +356,11 @@ def get_account_summary(user_id: str) -> Dict[str, Any]:
 
     now_dt = datetime.now(IST)
 
+    user_display_name = USER_NAME_MAP.get(user_id, user_id.replace("usr_", "").capitalize())
+
     return {
         "user_id": user_id,
+        "user_name": user_display_name,
         "initial_capital": INITIAL_VIRTUAL_CAPITAL,
         "available_cash": round(cash, 2),
         "total_invested": round(total_invested, 2),
