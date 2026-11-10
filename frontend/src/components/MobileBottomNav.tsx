@@ -2,7 +2,7 @@
 
 import React from "react";
 
-export type MobileTab = "home" | "opportunities" | "papertrading" | "research" | "profile";
+export type MobileTab = "opportunities" | "watchlist" | "papertrading" | "research" | "profile";
 
 interface MobileBottomNavProps {
   activeTab: MobileTab;
@@ -19,21 +19,20 @@ export default function MobileBottomNav({
 }: MobileBottomNavProps) {
   const navItems = [
     {
-      id: "home" as MobileTab,
-      label: "Home",
-      icon: (
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-          <polyline points="9 22 9 12 15 12 15 22" />
-        </svg>
-      )
-    },
-    {
       id: "opportunities" as MobileTab,
       label: "Explore",
       icon: (
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+        </svg>
+      )
+    },
+    {
+      id: "watchlist" as MobileTab,
+      label: "Watchlist",
+      icon: (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
         </svg>
       )
     },

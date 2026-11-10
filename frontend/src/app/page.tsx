@@ -28,6 +28,7 @@ import PaperTradingDashboard from "../components/PaperTradingDashboard";
 import TradeModal from "../components/TradeModal";
 import MobileBottomNav, { MobileTab } from "../components/MobileBottomNav";
 import UserProfileView from "../components/UserProfileView";
+import WatchlistView from "../components/WatchlistView";
 import { fetchPaperAccount, PaperAccount, TradingUser, getActiveTradingUser } from "../utils/api";
 
 export default function Home() {
@@ -41,11 +42,11 @@ export default function Home() {
 
   // Desktop active tab
   const [activeTab, setActiveTab] = useState<
-    "opportunities" | "shortterm" | "multibagger" | "papertrading" | "research" | "heatmap" | "stream" | "scanners" | "profile"
+    "opportunities" | "shortterm" | "multibagger" | "papertrading" | "research" | "heatmap" | "stream" | "scanners" | "profile" | "watchlist"
   >("opportunities");
 
   // Mobile bottom navigation tab state
-  const [mobileTab, setMobileTab] = useState<MobileTab>("home");
+  const [mobileTab, setMobileTab] = useState<MobileTab>("opportunities");
 
   // Mobile sub-pill filters
   const [mobileOppSubTab, setMobileOppSubTab] = useState<"futures" | "shortterm" | "multibagger" | "scanners">("futures");
@@ -218,15 +219,14 @@ export default function Home() {
   // Map mobile tab change to active views
   const handleMobileTabChange = (tab: MobileTab) => {
     setMobileTab(tab);
-    if (tab === "home") {
-      setActiveTab("opportunities");
-      setMobileOppSubTab("futures");
-    } else if (tab === "opportunities") {
+    if (tab === "opportunities") {
       setActiveTab(
         mobileOppSubTab === "futures" ? "opportunities" :
         mobileOppSubTab === "shortterm" ? "shortterm" :
         mobileOppSubTab === "multibagger" ? "multibagger" : "scanners"
       );
+    } else if (tab === "watchlist") {
+      setActiveTab("watchlist");
     } else if (tab === "papertrading") {
       setActiveTab("papertrading");
     } else if (tab === "research") {
@@ -270,7 +270,7 @@ export default function Home() {
             onClick={() => {
               setActiveTab(tab.id as any);
               if (tab.id === "opportunities") {
-                setMobileTab("home");
+                setMobileTab("opportunities");
                 setMobileOppSubTab("futures");
               } else if (tab.id === "shortterm" || tab.id === "multibagger" || tab.id === "scanners") {
                 setMobileTab("opportunities");
@@ -300,8 +300,8 @@ export default function Home() {
         ))}
       </div>
 
-      {/* Mobile Sub-Tab Pills for Home & Opportunities (< 768px only via CSS) */}
-      {(mobileTab === "opportunities" || mobileTab === "home") && (
+      {/* Mobile Sub-Tab Pills for Explore / Opportunities (< 768px only via CSS) */}
+      {mobileTab === "opportunities" && (
         <div className="mobile-only-flex hide-scrollbar mobile-subtabs-bar">
           {[
             { id: "futures", label: "⚡ Futures Income", target: "opportunities" },
@@ -314,7 +314,7 @@ export default function Home() {
               <button
                 key={sub.id}
                 onClick={() => {
-                  setMobileTab(sub.id === "futures" && mobileTab === "home" ? "home" : "opportunities");
+                  setMobileTab("opportunities");
                   setMobileOppSubTab(sub.id as any);
                   setActiveTab(sub.target as any);
                 }}
@@ -382,7 +382,7 @@ export default function Home() {
             onNavigateToTab={(tab) => {
               if (tab === "dashboard") {
                 setActiveTab("opportunities");
-                setMobileTab("home");
+                setMobileTab("opportunities");
                 setMobileOppSubTab("futures");
               } else if (tab === "research") {
                 setActiveTab("research");
@@ -491,9 +491,22 @@ export default function Home() {
             onNavigateTab={(tab) => {
               setActiveTab(tab as any);
               if (tab === "papertrading") setMobileTab("papertrading");
-              else if (tab === "opportunities") setMobileTab("home");
+              else if (tab === "opportunities") setMobileTab("opportunities");
               else if (tab === "research") setMobileTab("research");
             }}
+          />
+        </div>
+      )}
+
+      {/* View 10: Mobile Watchlist */}
+      {activeTab === "watchlist" && (
+        <div className="animate-fade-in">
+          <WatchlistView
+            key={activePaperUser.id}
+            stocks={stocks}
+            userId={activePaperUser.id}
+            userName={activePaperUser.name}
+            onSelectStock={handleInspectStockInResearch}
           />
         </div>
       )}
