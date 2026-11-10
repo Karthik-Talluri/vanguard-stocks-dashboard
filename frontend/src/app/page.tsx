@@ -26,6 +26,8 @@ import ShortTermPicks from "../components/ShortTermPicks";
 import MultiBaggerPicks from "../components/MultiBaggerPicks";
 import PaperTradingDashboard from "../components/PaperTradingDashboard";
 import TradeModal from "../components/TradeModal";
+import MobileBottomNav, { MobileTab } from "../components/MobileBottomNav";
+import UserProfileView from "../components/UserProfileView";
 import { fetchPaperAccount, PaperAccount, TradingUser, getActiveTradingUser } from "../utils/api";
 
 export default function Home() {
@@ -36,7 +38,18 @@ export default function Home() {
   const [detail, setDetail] = useState<StockDetail | null>(null);
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [chartInterval, setChartInterval] = useState("1d");
-  const [activeTab, setActiveTab] = useState<"opportunities" | "shortterm" | "multibagger" | "papertrading" | "research" | "heatmap" | "stream" | "scanners">("opportunities");
+
+  // Desktop active tab
+  const [activeTab, setActiveTab] = useState<
+    "opportunities" | "shortterm" | "multibagger" | "papertrading" | "research" | "heatmap" | "stream" | "scanners" | "profile"
+  >("opportunities");
+
+  // Mobile bottom navigation tab state
+  const [mobileTab, setMobileTab] = useState<MobileTab>("home");
+
+  // Mobile sub-pill filters
+  const [mobileOppSubTab, setMobileOppSubTab] = useState<"futures" | "shortterm" | "multibagger" | "scanners">("futures");
+  const [mobileResearchSubTab, setMobileResearchSubTab] = useState<"deepdive" | "heatmap" | "stream">("deepdive");
 
   // Global Paper Trading Modal states
   const [activePaperUser, setActivePaperUser] = useState<TradingUser>(getActiveTradingUser());
@@ -48,12 +61,6 @@ export default function Home() {
   // WebSocket / streaming states
   const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
-
-  // News Injector states
-  const [newsHeadline, setNewsHeadline] = useState("");
-  const [newsSentiment, setNewsSentiment] = useState(0.8);
-  const [injecting, setInjecting] = useState(false);
-  const [injectSuccess, setInjectSuccess] = useState("");
 
   // Initial load
   const loadMarketAndStocks = async () => {
@@ -103,7 +110,6 @@ export default function Home() {
       wsRef.current = ws;
 
       ws.onopen = () => {
-        console.log("WebSocket connected. Subscribing to:", selectedTicker);
         ws?.send(JSON.stringify({ subscribe: selectedTicker }));
       };
 
@@ -111,7 +117,6 @@ export default function Home() {
         try {
           const data = JSON.parse(event.data);
           if (data.ticker === selectedTicker) {
-            // 1. Update prices in list and details dynamically
             setStocks((prev) => 
               prev.map((s) => 
                 s.ticker === data.ticker 
@@ -121,14 +126,12 @@ export default function Home() {
             );
 
             if (detail && detail.ticker === data.ticker) {
-              // Adjust master score dynamically if ticked
               setDetail((prev) => prev ? { ...prev, master_score: data.master_score, recommendation: data.recommendation } : null);
             }
 
-            // 2. Append new streaming log lines
             setTerminalLogs((prev) => {
               const combined = [...prev, ...data.agent_logs];
-              return combined.slice(-60); // limit to last 60 entries
+              return combined.slice(-60);
             });
           }
         } catch (err) {
@@ -139,34 +142,36 @@ export default function Home() {
       ws.onerror = (e) => {
         console.warn("WebSocket disconnected or unsupported:", e);
       };
-
-      ws.onclose = () => {
-        console.log("WebSocket connection closed.");
-      };
     } catch (err) {
       console.warn("WebSocket connection could not be established:", err);
     }
 
     return () => {
-      if (ws) {
-        ws.close();
-      }
+      if (ws) ws.close();
     };
   }, [selectedTicker]);
 
   // Handle stock select
   const handleSelectStock = (ticker: string) => {
     setSelectedTicker(ticker);
-    setTerminalLogs([]); // clear log window for fresh streaming
+    setTerminalLogs([]);
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ subscribe: ticker }));
     }
   };
 
+  // Switch to research view and select stock
+  const handleInspectStockInResearch = (ticker: string) => {
+    handleSelectStock(ticker);
+    setActiveTab("research");
+    setMobileTab("research");
+    setMobileResearchSubTab("deepdive");
+  };
+
   useEffect(() => {
     const handler = (e: any) => {
       if (e.detail) {
-        handleSelectStock(e.detail);
+        handleInspectStockInResearch(e.detail);
       }
     };
     window.addEventListener("select-stock", handler);
@@ -210,39 +215,46 @@ export default function Home() {
     };
   }, [selectedTicker, activePaperUser?.id]);
 
-  // Inject Custom Headline
-  const handleInjectNews = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newsHeadline) return;
-    setInjecting(true);
-    setInjectSuccess("");
-    try {
-      await injectNews(selectedTicker, newsHeadline, newsSentiment);
-      setInjectSuccess("Headline injected! Scoring engine recalculating...");
-      setNewsHeadline("");
-      // Refresh details and stocks immediately
-      await loadTickerDetails(selectedTicker);
-      const stocksRes = await fetchStocks();
-      setStocks(stocksRes);
-    } catch (e) {
-      console.error(e);
-      setInjectSuccess("Failed to inject headline.");
+  // Map mobile tab change to active views
+  const handleMobileTabChange = (tab: MobileTab) => {
+    setMobileTab(tab);
+    if (tab === "home") {
+      setActiveTab("opportunities");
+      setMobileOppSubTab("futures");
+    } else if (tab === "opportunities") {
+      setActiveTab(
+        mobileOppSubTab === "futures" ? "opportunities" :
+        mobileOppSubTab === "shortterm" ? "shortterm" :
+        mobileOppSubTab === "multibagger" ? "multibagger" : "scanners"
+      );
+    } else if (tab === "papertrading") {
+      setActiveTab("papertrading");
+    } else if (tab === "research") {
+      setActiveTab(
+        mobileResearchSubTab === "deepdive" ? "research" :
+        mobileResearchSubTab === "heatmap" ? "heatmap" : "stream"
+      );
+    } else if (tab === "profile") {
+      setActiveTab("profile");
     }
-    setInjecting(false);
   };
 
-  const currentSector = detail ? String(detail.fundamentals_meta?.sector) : "";
-  const sectorsRs = detail?.agents?.["Sector Agent"]?.metrics?.all_sectors_rs || {};
-  const sectorsRs5d = detail?.agents?.["Sector Agent"]?.metrics?.all_sectors_rs_5d || {};
-
-
   return (
-    <div style={{ padding: "12px 16px", maxWidth: "100%", width: "100%", display: "flex", flexDirection: "column", gap: "12px" }}>
+    <div className="page-main-container">
       {/* Top Header */}
-      <DashboardHeader status={marketStatus} onRefresh={loadMarketAndStocks} error={marketError} />
+      <DashboardHeader 
+        status={marketStatus} 
+        onRefresh={loadMarketAndStocks} 
+        error={marketError} 
+        onOpenProfile={() => {
+          setActiveTab("profile");
+          setMobileTab("profile");
+        }}
+        activeUserName={activePaperUser.name}
+      />
 
-      {/* Tab Switcher */}
-      <div className="tab-container" style={{ display: "flex", gap: "8px", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "12px", marginTop: "-4px" }}>
+      {/* Desktop Tab Switcher (Visible >= 768px via CSS) */}
+      <div className="desktop-tab-container tab-container">
         {[
           { id: "opportunities", label: "🏠 Opportunities" },
           { id: "shortterm", label: "⚡ Short-Term Alpha" },
@@ -255,17 +267,31 @@ export default function Home() {
         ].map((tab) => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
+            onClick={() => {
+              setActiveTab(tab.id as any);
+              if (tab.id === "opportunities") {
+                setMobileTab("home");
+                setMobileOppSubTab("futures");
+              } else if (tab.id === "shortterm" || tab.id === "multibagger" || tab.id === "scanners") {
+                setMobileTab("opportunities");
+                setMobileOppSubTab(tab.id as any);
+              } else if (tab.id === "papertrading") {
+                setMobileTab("papertrading");
+              } else if (tab.id === "research" || tab.id === "heatmap" || tab.id === "stream") {
+                setMobileTab("research");
+                setMobileResearchSubTab(tab.id === "research" ? "deepdive" : (tab.id as any));
+              }
+            }}
             style={{
-              fontSize: "13px",
-              padding: "8px 16px",
+              fontSize: "12.5px",
+              padding: "7px 12px",
               border: "1px solid " + (activeTab === tab.id ? "var(--accent-ml)" : "var(--border-subtle)"),
               borderRadius: "8px",
               background: activeTab === tab.id ? "var(--accent-ml)" : "var(--bg-card)",
               color: activeTab === tab.id ? "#ffffff" : "var(--color-text-secondary)",
-              fontWeight: "600",
+              fontWeight: "700",
               cursor: "pointer",
-              transition: "all 0.2s",
+              transition: "all 0.15s ease",
               boxShadow: activeTab === tab.id ? "0 4px 12px rgba(79, 70, 229, 0.25)" : "none"
             }}
           >
@@ -274,30 +300,118 @@ export default function Home() {
         ))}
       </div>
 
-      {/* Rendering tab contents */}
+      {/* Mobile Sub-Tab Pills for Home & Opportunities (< 768px only via CSS) */}
+      {(mobileTab === "opportunities" || mobileTab === "home") && (
+        <div className="mobile-only-flex hide-scrollbar mobile-subtabs-bar">
+          {[
+            { id: "futures", label: "⚡ Futures Income", target: "opportunities" },
+            { id: "shortterm", label: "⚡ Short-Term Alpha", target: "shortterm" },
+            { id: "multibagger", label: "🚀 Multi-Baggers", target: "multibagger" },
+            { id: "scanners", label: "🔍 Income Scanners", target: "scanners" }
+          ].map((sub) => {
+            const isSubActive = activeTab === sub.target;
+            return (
+              <button
+                key={sub.id}
+                onClick={() => {
+                  setMobileTab(sub.id === "futures" && mobileTab === "home" ? "home" : "opportunities");
+                  setMobileOppSubTab(sub.id as any);
+                  setActiveTab(sub.target as any);
+                }}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "20px",
+                  fontSize: "11px",
+                  fontWeight: "800",
+                  whiteSpace: "nowrap",
+                  background: isSubActive ? "var(--accent-ml)" : "var(--bg-card)",
+                  color: isSubActive ? "#ffffff" : "var(--color-text-secondary)",
+                  border: isSubActive ? "1px solid var(--accent-ml)" : "1px solid var(--border-subtle)",
+                  cursor: "pointer",
+                  boxShadow: isSubActive ? "0 2px 8px rgba(79, 70, 229, 0.25)" : "none"
+                }}
+              >
+                {sub.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Mobile Sub-Tab Pills for AI Research (< 768px only via CSS) */}
+      {mobileTab === "research" && (
+        <div className="mobile-only-flex hide-scrollbar mobile-subtabs-bar">
+          {[
+            { id: "deepdive", label: "🔬 Deep Dive & Chart", target: "research" },
+            { id: "heatmap", label: "🔮 Probability Treemap", target: "heatmap" },
+            { id: "stream", label: "📡 Live Console", target: "stream" }
+          ].map((sub) => {
+            const isSubActive = mobileResearchSubTab === sub.id;
+            return (
+              <button
+                key={sub.id}
+                onClick={() => {
+                  setMobileResearchSubTab(sub.id as any);
+                  setActiveTab(sub.target as any);
+                }}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "20px",
+                  fontSize: "11px",
+                  fontWeight: "800",
+                  whiteSpace: "nowrap",
+                  background: isSubActive ? "var(--accent-ml)" : "var(--bg-card)",
+                  color: isSubActive ? "#ffffff" : "var(--color-text-secondary)",
+                  border: isSubActive ? "1px solid var(--accent-ml)" : "1px solid var(--border-subtle)",
+                  cursor: "pointer",
+                  boxShadow: isSubActive ? "0 2px 8px rgba(79, 70, 229, 0.25)" : "none"
+                }}
+              >
+                {sub.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* View 1: Opportunities / Home */}
       {activeTab === "opportunities" && (
         <div className="animate-fade-in">
           <OpportunitiesDashboard 
-            onSelectStock={handleSelectStock} 
+            onSelectStock={handleInspectStockInResearch} 
             onNavigateToTab={(tab) => {
               if (tab === "dashboard") {
                 setActiveTab("opportunities");
-              } else {
-                setActiveTab(tab as any);
+                setMobileTab("home");
+                setMobileOppSubTab("futures");
+              } else if (tab === "research") {
+                setActiveTab("research");
+                setMobileTab("research");
+                setMobileResearchSubTab("deepdive");
+              } else if (tab === "scanners") {
+                setActiveTab("scanners");
+                setMobileTab("opportunities");
+                setMobileOppSubTab("scanners");
+              } else if (tab === "stream") {
+                setActiveTab("stream");
+                setMobileTab("research");
+                setMobileResearchSubTab("stream");
               }
             }} 
           />
         </div>
       )}
 
+      {/* View 2: Short Term Picks */}
       {activeTab === "shortterm" && (
         <div className="animate-fade-in">
-          <ShortTermPicks onSelectStock={handleSelectStock} />
+          <ShortTermPicks onSelectStock={handleInspectStockInResearch} />
         </div>
       )}
 
+      {/* View 3: Research Workspace */}
       {activeTab === "research" && (
-        <div className="animate-fade-in research-layout-grid" style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: "16px", alignItems: "start" }}>
+        <div className="animate-fade-in research-layout-grid" style={{ alignItems: "start" }}>
           <StockSelector 
             stocks={stocks} 
             selectedTicker={selectedTicker} 
@@ -312,52 +426,79 @@ export default function Home() {
         </div>
       )}
 
+      {/* View 4: Probability Heatmap */}
       {activeTab === "heatmap" && (
         <div className="animate-fade-in">
           <ProbabilityHeatmap 
             stocks={stocks} 
-            onSelectStock={handleSelectStock}
-            onSwitchTab={(tab) => setActiveTab((tab === "terminal" ? "research" : tab) as any)}
+            onSelectStock={handleInspectStockInResearch}
+            onSwitchTab={(tab) => {
+              const target = tab === "terminal" ? "research" : tab;
+              setActiveTab(target as any);
+              if (target === "research") {
+                setMobileTab("research");
+                setMobileResearchSubTab("deepdive");
+              }
+            }}
           />
         </div>
       )}
 
+      {/* View 5: Live Streaming Console */}
       {activeTab === "stream" && (
-        <div className="glass-panel animate-fade-in" style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "12px" }}>
-          <h3 style={{ fontSize: "14px", fontWeight: "800", color: "var(--color-text-primary)", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "6px" }}>
+        <div className="glass-panel animate-fade-in" style={{ padding: "clamp(12px, 3.5vw, 18px)", display: "flex", flexDirection: "column", gap: "12px" }}>
+          <h3 style={{ fontSize: "clamp(13px, 3.5vw, 14px)", fontWeight: "800", color: "var(--color-text-primary)", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "6px" }}>
             📡 Real-Time Agent Logs & Consensus Stream (WebSocket Ticks)
           </h3>
           <AgentTerminal logs={terminalLogs} />
         </div>
       )}
 
+      {/* View 6: Futures Scanners */}
       {activeTab === "scanners" && (
         <div className="animate-fade-in">
           <FuturesScanners />
         </div>
       )}
 
+      {/* View 7: Multi-Bagger Picks */}
       {activeTab === "multibagger" && (
         <div className="animate-fade-in">
-          <MultiBaggerPicks onSelectStock={handleSelectStock} />
+          <MultiBaggerPicks onSelectStock={handleInspectStockInResearch} />
         </div>
       )}
 
+      {/* View 8: Paper Trading */}
       {activeTab === "papertrading" && (
         <div className="animate-fade-in">
           <PaperTradingDashboard 
             stocks={stocks} 
             initialAccount={paperAccount}
             onAccountUpdated={setPaperAccount}
-            onSelectStock={(t) => {
-              handleSelectStock(t);
-              setActiveTab("research");
-            }} 
+            onSelectStock={handleInspectStockInResearch} 
           />
         </div>
       )}
 
-      {/* Global Trade Execution Modal */}
+      {/* View 9: Mobile Profile & 10 User Switcher */}
+      {activeTab === "profile" && (
+        <div className="animate-fade-in">
+          <UserProfileView
+            activeUser={activePaperUser}
+            account={paperAccount}
+            onUserChanged={(u) => setActivePaperUser(u)}
+            onAccountUpdated={(acc) => setPaperAccount(acc)}
+            onNavigateTab={(tab) => {
+              setActiveTab(tab as any);
+              if (tab === "papertrading") setMobileTab("papertrading");
+              else if (tab === "opportunities") setMobileTab("home");
+              else if (tab === "research") setMobileTab("research");
+            }}
+          />
+        </div>
+      )}
+
+      {/* Global Trade Execution Modal (Mobile Bottom-Sheet) */}
       {(() => {
         const modalStock = stocks.find((s) => s.ticker === modalTradeTicker);
         const modalHolding = paperAccount?.holdings.find((h) => h.ticker === modalTradeTicker);
@@ -380,6 +521,13 @@ export default function Home() {
         );
       })()}
 
+      {/* Mobile Fixed Bottom Navigation Bar (Active on mobile screens < 768px) */}
+      <MobileBottomNav
+        activeTab={mobileTab}
+        onChangeTab={handleMobileTabChange}
+        holdingsCount={paperAccount?.holdings.length ?? 0}
+        userName={activePaperUser.name}
+      />
     </div>
   );
 }

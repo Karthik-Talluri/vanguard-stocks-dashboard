@@ -74,7 +74,7 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
 
   if (error || !detail || !stockDetail || (detail as any).error || (stockDetail as any).error || !detail.recommendation) {
     return (
-      <div className="glass-panel" style={{ padding: "30px", color: "var(--color-error)", textAlign: "center", fontWeight: "700" }}>
+      <div className="glass-panel" style={{ padding: "24px", color: "var(--color-sell)", textAlign: "center", fontWeight: "700" }}>
         ⚠️ {error || (detail as any).error || (stockDetail as any).error || "Stock details could not be loaded."}
       </div>
     );
@@ -158,13 +158,13 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
       
       {/* Upper 2-Column Grid */}
-      <div className="responsive-split-grid" style={{ display: "grid", gridTemplateColumns: "1.25fr 1fr", gap: "16px", alignItems: "start" }}>
+      <div className="responsive-split-grid" style={{ gridTemplateColumns: "1.25fr 1fr", gap: "16px", alignItems: "start" }}>
         
         {/* Left Column: Strategy & Position Setup */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px", minWidth: 0 }}>
           
           {/* Strategy Mode Switcher */}
-          <div style={{ display: "flex", gap: "8px", background: "rgba(0,0,0,0.02)", padding: "4px", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
+          <div className="strategy-mode-tabs" style={{ background: "rgba(0,0,0,0.02)", padding: "4px", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
             {[
               { id: "income", label: "💰 30-Day Option Income Strategy", desc: "Buy Future + Sell Call (Bullish) or Sell Call only (Bearish)" },
               { id: "swing", label: "⚡ 2-Day Futures Swing (BTST)", desc: "Buy Future, Hold 2 Days" }
@@ -173,11 +173,12 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
                 key={mode.id}
                 onClick={() => setStrategyMode(mode.id as any)}
                 style={{
-                  flex: 1,
+                  width: "100%",
+                  textAlign: "center",
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
-                  padding: "6px 12px",
+                  padding: "6px 10px",
                   borderRadius: "6px",
                   border: "none",
                   background: strategyMode === mode.id ? "var(--bg-card)" : "transparent",
@@ -194,14 +195,14 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
           </div>
 
           {/* Hero Score & Strategy Summary */}
-          <div className="glass-panel" style={{ padding: "20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
+          <div className="glass-panel" style={{ padding: "clamp(14px, 3vw, 20px)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
+            <div style={{ flex: "1 1 200px", minWidth: 0 }}>
               <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-                <span style={{ fontSize: "24px", fontWeight: "900", color: "var(--color-text-primary)" }}>{detail.ticker}</span>
+                <span style={{ fontSize: "clamp(18px, 5vw, 24px)", fontWeight: "900", color: "var(--color-text-primary)" }}>{detail.ticker}</span>
                 <span style={{ fontSize: "11px", fontWeight: "700", color: "var(--color-text-secondary)", background: "rgba(0,0,0,0.05)", padding: "2px 8px", borderRadius: "20px", whiteSpace: "nowrap" }}>
                   Spot: ₹{detail.spot_price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
-                <div style={{ display: "flex", gap: "6px", marginLeft: "4px" }}>
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                   <button
                     onClick={() => {
                       if (typeof window !== "undefined") {
@@ -406,7 +407,7 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
                 </h3>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
                     <span style={{ fontSize: "11px", fontWeight: "700", color: "var(--color-text-secondary)" }}>Available Allocation Capital:</span>
                     <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                       <span style={{ fontSize: "12px", fontWeight: "700" }}>₹</span>
@@ -463,41 +464,43 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
                   Select any Call Strike below to dynamically override the strategy recommendations and recalculate risk.
                 </p>
 
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px", textAlign: "left" }}>
-                  <thead>
-                    <tr style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-                      <th style={{ padding: "6px 8px", color: "var(--color-text-muted)" }}>Strike</th>
-                      <th style={{ padding: "6px 8px", color: "var(--color-text-muted)" }}>Premium</th>
-                      <th style={{ padding: "6px 8px", color: "var(--color-text-muted)", textAlign: "center" }}>POP</th>
-                      <th style={{ padding: "6px 8px", color: "var(--color-text-muted)", textAlign: "center" }}>Yield</th>
-                      <th style={{ padding: "6px 8px", color: "var(--color-text-muted)", textAlign: "center" }}>Expected Ret</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detail.candidates.map((c) => {
-                      const isSelected = activeStrike.strike === c.strike;
-                      return (
-                        <tr
-                          key={c.strike}
-                          onClick={() => setSelectedStrike(c)}
-                          style={{
-                            borderBottom: "1px solid var(--border-subtle)",
-                            background: isSelected ? "rgba(59, 130, 246, 0.06)" : "none",
-                            cursor: "pointer",
-                            fontWeight: isSelected ? "800" : "500"
-                          }}
-                          className="strike-row"
-                        >
-                          <td style={{ padding: "8px", color: isSelected ? "#3b82f6" : "var(--color-text-primary)" }}>{c.strike} CE</td>
-                          <td style={{ padding: "8px" }}>₹{c.premium}</td>
-                          <td style={{ padding: "8px", textAlign: "center", color: "#10b981" }}>{c.pop}%</td>
-                          <td style={{ padding: "8px", textAlign: "center" }}>{c.yield.toFixed(2)}%</td>
-                          <td style={{ padding: "8px", textAlign: "center", color: "#3b82f6" }}>{c.expected_return.toFixed(2)}%</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <div className="table-responsive-wrapper compact-table-wrapper">
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px", textAlign: "left" }}>
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                        <th style={{ padding: "6px 8px", color: "var(--color-text-muted)" }}>Strike</th>
+                        <th style={{ padding: "6px 8px", color: "var(--color-text-muted)" }}>Premium</th>
+                        <th style={{ padding: "6px 8px", color: "var(--color-text-muted)", textAlign: "center" }}>POP</th>
+                        <th style={{ padding: "6px 8px", color: "var(--color-text-muted)", textAlign: "center" }}>Yield</th>
+                        <th style={{ padding: "6px 8px", color: "var(--color-text-muted)", textAlign: "center" }}>Expected Ret</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detail.candidates.map((c) => {
+                        const isSelected = activeStrike.strike === c.strike;
+                        return (
+                          <tr
+                            key={c.strike}
+                            onClick={() => setSelectedStrike(c)}
+                            style={{
+                              borderBottom: "1px solid var(--border-subtle)",
+                              background: isSelected ? "rgba(59, 130, 246, 0.06)" : "none",
+                              cursor: "pointer",
+                              fontWeight: isSelected ? "800" : "500"
+                            }}
+                            className="strike-row"
+                          >
+                            <td style={{ padding: "8px", color: isSelected ? "#3b82f6" : "var(--color-text-primary)" }}>{c.strike} CE</td>
+                            <td style={{ padding: "8px" }}>₹{c.premium}</td>
+                            <td style={{ padding: "8px", textAlign: "center", color: "#10b981" }}>{c.pop}%</td>
+                            <td style={{ padding: "8px", textAlign: "center" }}>{c.yield.toFixed(2)}%</td>
+                            <td style={{ padding: "8px", textAlign: "center", color: "#3b82f6" }}>{c.expected_return.toFixed(2)}%</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </>
           ) : (
@@ -570,7 +573,7 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
                 </h3>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
                     <span style={{ fontSize: "11px", fontWeight: "700", color: "var(--color-text-secondary)" }}>Available Allocation Capital:</span>
                     <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                       <span style={{ fontSize: "12px", fontWeight: "700" }}>₹</span>
@@ -623,11 +626,11 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
         </div>
 
         {/* Right Column: Historical Charts & Agents */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px", minWidth: 0 }}>
           
           {/* Backtesting Module */}
           <div className="glass-panel" style={{ padding: "16px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px", marginBottom: "12px" }}>
               <h3 style={{ margin: 0, fontSize: "12px", fontWeight: "800", color: "var(--color-text-secondary)", textTransform: "uppercase" }}>
                 🧪 5-Year Backtest History Verification
               </h3>
@@ -687,7 +690,7 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
                 <div style={{ maxHeight: "250px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px", paddingRight: "4px" }}>
                   {detail.backtest.trades.map((t) => (
                     <div key={t.trade_id} style={{ background: "rgba(0,0,0,0.02)", padding: "8px", borderRadius: "6px", fontSize: "10px", border: "1px solid var(--border-subtle)" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "700", marginBottom: "4px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "4px", fontWeight: "700", marginBottom: "4px" }}>
                         <span style={{ color: "var(--color-text-secondary)" }}>
                           #{t.trade_id} | {t.entry_date} to {t.exit_date}
                         </span>
@@ -696,7 +699,7 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
                         </span>
                       </div>
                       
-                      <div style={{ display: "flex", justifyContent: "space-between", color: "var(--color-text-muted)", marginBottom: "4px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "4px", color: "var(--color-text-muted)", marginBottom: "4px" }}>
                         <span>Entry Spot: ₹{t.entry_price} → Exit: ₹{t.exit_price}</span>
                         <span style={{ fontWeight: "700", color: t.status === "PROFIT" ? "#10b981" : "#ef4444" }}>
                           ₹{t.pnl_amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
@@ -718,13 +721,13 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
           </div>
 
           {/* Spot Price and indicators chart */}
-          <div className="glass-panel" style={{ padding: "16px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+          <div className="glass-panel" style={{ padding: "clamp(12px, 3vw, 16px)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px", marginBottom: "10px" }}>
               <h3 style={{ margin: 0, fontSize: "12px", fontWeight: "800", color: "var(--color-text-secondary)", textTransform: "uppercase" }}>
                 📈 Underlying Future Price & Options PCR
               </h3>
               
-              <div style={{ display: "flex", gap: "4px" }}>
+              <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
                 {["15m", "1h", "1d"].map((interval) => (
                   <button
                     key={interval}
@@ -746,7 +749,7 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
               </div>
             </div>
 
-            <div style={{ height: "240px" }}>
+            <div style={{ width: "100%", minWidth: 0 }}>
               <StockChart chartData={chartData} ticker={detail.ticker} interval={chartInterval} onIntervalChange={onIntervalChange} />
             </div>
           </div>
@@ -779,7 +782,7 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
                 
                 return (
                   <div key={ag.id} style={{ display: "flex", flexDirection: "column", borderBottom: "1px solid rgba(0,0,0,0.03)", paddingBottom: "8px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", fontWeight: "700" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "4px", fontSize: "11px", fontWeight: "700" }}>
                       <span>{ag.label} <span style={{ color: "var(--color-text-muted)", fontSize: "9px" }}>({ag.weight})</span></span>
                       <span style={{ color: valColor }}>
                         {isPenalty 
@@ -800,7 +803,7 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
 
           {/* Multi-Agent Parameter Strength Summary Chart */}
           <div className="glass-panel" style={{ padding: "16px" }}>
-            <h3 style={{ margin: "0 0 14px 0", fontSize: "12px", fontWeight: "800", color: "var(--color-text-secondary)", textTransform: "uppercase", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h3 style={{ margin: "0 0 14px 0", fontSize: "12px", fontWeight: "800", color: "var(--color-text-secondary)", textTransform: "uppercase", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
               <span>📊 Multi-Agent Strength Summary Chart</span>
               <span style={{ fontSize: "10px", color: "var(--color-text-muted)" }}>Selected: {detail.ticker}</span>
             </h3>
@@ -906,10 +909,10 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
       </div>
 
       {/* New Lower Grid for Sector Sentiment, Advanced Technicals, Smart Money & Analyst Consensus */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+      <div className="two-col-desktop-grid">
         
         {/* Panel A: Advanced Technical Indicators & Structural Zones */}
-        <div className="glass-panel" style={{ padding: "16px" }}>
+        <div className="glass-panel" style={{ padding: "clamp(12px, 3vw, 16px)" }}>
           <h3 style={{ margin: "0 0 14px 0", fontSize: "12px", fontWeight: "800", color: "var(--color-text-secondary)", textTransform: "uppercase" }}>
             📊 Advanced Technicals & Market Structure
           </h3>
@@ -917,11 +920,11 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
           <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
             
             {/* Technical Sub-Grid */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "10px" }}>
               <div style={{ background: "rgba(0,0,0,0.015)", padding: "10px", borderRadius: "6px" }}>
                 <span style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "800" }}>RSI (14) MOMENTUM</span>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: "2px" }}>
-                  <div style={{ fontSize: "18px", fontWeight: "900", color: rsiVal >= 70 ? "#ef4444" : rsiVal <= 30 ? "#10b981" : "#3b82f6" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: "4px", marginTop: "2px" }}>
+                  <div style={{ fontSize: "clamp(15px, 4vw, 18px)", fontWeight: "900", color: rsiVal >= 70 ? "#ef4444" : rsiVal <= 30 ? "#10b981" : "#3b82f6" }}>
                     {rsiVal.toFixed(1)}
                   </div>
                   <span style={{ fontSize: "9px", fontWeight: "700", color: "var(--color-text-secondary)" }}>
@@ -936,8 +939,8 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
 
               <div style={{ background: "rgba(0,0,0,0.015)", padding: "10px", borderRadius: "6px" }}>
                 <span style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "800" }}>ADX TREND STRENGTH</span>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: "2px" }}>
-                  <div style={{ fontSize: "18px", fontWeight: "900", color: adxVal >= 25 ? "#10b981" : "var(--color-text-muted)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: "4px", marginTop: "2px" }}>
+                  <div style={{ fontSize: "clamp(15px, 4vw, 18px)", fontWeight: "900", color: adxVal >= 25 ? "#10b981" : "var(--color-text-muted)" }}>
                     {adxVal.toFixed(1)}
                   </div>
                   <span style={{ fontSize: "9px", fontWeight: "700", color: "var(--color-text-secondary)" }}>
@@ -952,7 +955,7 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
             </div>
 
             {/* MACD Crossover */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(0,0,0,0.015)", padding: "10px", borderRadius: "6px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px", background: "rgba(0,0,0,0.015)", padding: "10px", borderRadius: "6px" }}>
               <div>
                 <span style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "800" }}>MACD CROSSOVER</span>
                 <div style={{ fontSize: "11px", fontWeight: "700", marginTop: "2px" }}>
@@ -970,15 +973,15 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
             {/* Timeframe Alignment Grid */}
             <div>
               <span style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "800" }}>MULTITIMEFRAME ALIGNMENT</span>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginTop: "4px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "6px", marginTop: "4px" }}>
                 {[
                   { label: "Daily EMA50", val: dailyTrend },
                   { label: "Weekly Structure", val: weeklyTrend },
                   { label: "Monthly Structure", val: monthlyTrend }
                 ].map((tf, i) => (
-                  <div key={i} style={{ background: "rgba(0,0,0,0.01)", border: "1px solid var(--border-subtle)", borderRadius: "6px", padding: "6px", textAlign: "center" }}>
-                    <div style={{ fontSize: "8px", color: "var(--color-text-muted)", fontWeight: "700" }}>{tf.label}</div>
-                    <div style={{ fontSize: "11px", fontWeight: "900", color: tf.val === "Bullish" ? "#10b981" : tf.val === "Bearish" ? "#ef4444" : "var(--color-text-secondary)" }}>
+                  <div key={i} style={{ background: "rgba(0,0,0,0.01)", border: "1px solid var(--border-subtle)", borderRadius: "6px", padding: "6px 4px", textAlign: "center", minWidth: 0 }}>
+                    <div style={{ fontSize: "8px", color: "var(--color-text-muted)", fontWeight: "700", overflowWrap: "break-word" }}>{tf.label}</div>
+                    <div style={{ fontSize: "clamp(9.5px, 2.5vw, 11px)", fontWeight: "900", overflowWrap: "break-word", color: tf.val === "Bullish" ? "#10b981" : tf.val === "Bearish" ? "#ef4444" : "var(--color-text-secondary)" }}>
                       {tf.val.toUpperCase()}
                     </div>
                   </div>
@@ -988,14 +991,14 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
 
             {/* Support & Resistance supply/demand zones */}
             <div style={{ background: "rgba(0,0,0,0.015)", padding: "10px", borderRadius: "6px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
                 <span style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "800" }}>SUPPLY & DEMAND STRUCTURAL ZONES</span>
                 <span style={{ fontSize: "9px", fontWeight: "800", color: zoneSignal === "NEAR_DEMAND_ZONE" ? "#10b981" : zoneSignal === "NEAR_SUPPLY_ZONE" ? "#ef4444" : "#3b82f6" }}>
                   {zoneSignal.replace("_", " ")}
                 </span>
               </div>
               
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px", fontWeight: "700", color: "var(--color-text-secondary)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "4px", fontSize: "10px", fontWeight: "700", color: "var(--color-text-secondary)" }}>
                 <span>Demand: ₹{supportZone.toLocaleString("en-IN")}</span>
                 <span>Supply: ₹{resistanceZone.toLocaleString("en-IN")}</span>
               </div>
@@ -1039,7 +1042,7 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
         </div>
 
         {/* Panel B: Sector Sentiment & Institutional flows */}
-        <div className="glass-panel" style={{ padding: "16px" }}>
+        <div className="glass-panel" style={{ padding: "clamp(12px, 3vw, 16px)" }}>
           <h3 style={{ margin: "0 0 14px 0", fontSize: "12px", fontWeight: "800", color: "var(--color-text-secondary)", textTransform: "uppercase" }}>
             💼 Sector Sentiment & Smart Money flows
           </h3>
@@ -1047,10 +1050,10 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             
             {/* Sector Sentiment & Alpha */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "10px" }}>
               <div style={{ background: "rgba(0,0,0,0.015)", padding: "10px", borderRadius: "6px" }}>
                 <span style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "800" }}>SECTOR: {sectorName.toUpperCase()}</span>
-                <div style={{ fontSize: "18px", fontWeight: "900", color: sectorScore >= 75 ? "#10b981" : sectorScore >= 45 ? "#3b82f6" : "#ef4444", marginTop: "2px" }}>
+                <div style={{ fontSize: "clamp(15px, 4vw, 18px)", fontWeight: "900", color: sectorScore >= 75 ? "#10b981" : sectorScore >= 45 ? "#3b82f6" : "#ef4444", marginTop: "2px" }}>
                   {sectorScore}/100
                 </div>
                 <div style={{ fontSize: "8px", color: "var(--color-text-muted)", marginTop: "4px" }}>
@@ -1062,7 +1065,7 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
 
               <div style={{ background: "rgba(0,0,0,0.015)", padding: "10px", borderRadius: "6px" }}>
                 <span style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "800" }}>NIFTY 50 BREADTH</span>
-                <div style={{ fontSize: "18px", fontWeight: "900", color: breadthScore >= 60 ? "#10b981" : breadthScore >= 40 ? "#f59e0b" : "#ef4444", marginTop: "2px" }}>
+                <div style={{ fontSize: "clamp(15px, 4vw, 18px)", fontWeight: "900", color: breadthScore >= 60 ? "#10b981" : breadthScore >= 40 ? "#f59e0b" : "#ef4444", marginTop: "2px" }}>
                   {breadthScore}/100
                 </div>
                 <div style={{ fontSize: "8px", color: "var(--color-text-muted)", marginTop: "4px" }}>
@@ -1073,12 +1076,12 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
 
             {/* Smart Money Metrics */}
             <div style={{ background: "rgba(0,0,0,0.015)", padding: "10px", borderRadius: "6px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
                 <span style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "800" }}>SMART MONEY SCORE</span>
                 <span style={{ fontSize: "11px", fontWeight: "800", color: "#3b82f6" }}>{smScore}/100</span>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", fontSize: "10px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px", fontSize: "10px" }}>
                 <div>
                   <span style={{ color: "var(--color-text-muted)", fontSize: "9px" }}>MF Accumulation (1m):</span>
                   <div style={{ fontWeight: "700", color: smMfChange >= 0 ? "#10b981" : "#ef4444" }}>
@@ -1122,7 +1125,7 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
 
             {/* Analyst Consensus Rating */}
             <div style={{ background: "rgba(0,0,0,0.015)", padding: "10px", borderRadius: "6px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "4px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: "4px", marginBottom: "4px" }}>
                 <span style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "800" }}>ANALYST CONSENSUS</span>
                 <span style={{ fontSize: "11px", fontWeight: "900", color: analystConsensus === "BULLISH" ? "#10b981" : analystConsensus === "BEARISH" ? "#ef4444" : "#f59e0b" }}>
                   {analystConsensus} ({analystScore.toFixed(1)}/100)
@@ -1142,7 +1145,7 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
                 <span>Sell: {analystSellPct}%</span>
               </div>
 
-              <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid rgba(0,0,0,0.04)", paddingTop: "6px", marginTop: "6px", fontSize: "9px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "6px", borderTop: "1px solid rgba(0,0,0,0.04)", paddingTop: "6px", marginTop: "6px", fontSize: "9px" }}>
                 <div>
                   Target Price Trend: <strong style={{ color: analystTpTrend === "RISING" ? "#10b981" : "#ef4444" }}>{analystTpTrend}</strong>
                 </div>

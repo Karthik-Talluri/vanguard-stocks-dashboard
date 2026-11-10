@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useEffect, useState } from "react";
 import { fetchFuturesOpportunities, FuturesOpportunity } from "../utils/api";
 
@@ -32,13 +34,18 @@ export default function FuturesScanners() {
     );
   }
 
+  const handleOpenTrade = (ticker: string) => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("open-paper-trade", { detail: { ticker, type: "BUY" } }));
+    }
+  };
+
   // Generate strategy setups based on real prices from opportunities
   const getCashSecuredPuts = () => {
     return opportunities.slice(0, 8).map((o, idx) => {
-      // Put strike is ~5% below spot
-      const strike = Math.round(o.price * 0.95 / 10) * 10;
+      const strike = Math.round((o.price * 0.95) / 10) * 10;
       const premium = Math.round(o.price * 0.02 * 100) / 100;
-      const margin = o.price * 0.20; // cash blocked is margin blocked equivalent
+      const margin = o.price * 0.20;
       const yieldPct = (premium / margin) * 100;
       return {
         rank: idx + 1,
@@ -54,7 +61,7 @@ export default function FuturesScanners() {
 
   const getBullPutSpreads = () => {
     return opportunities.slice(0, 8).map((o, idx) => {
-      const sellStrike = Math.round(o.price * 0.95 / 10) * 10;
+      const sellStrike = Math.round((o.price * 0.95) / 10) * 10;
       const buyStrike = sellStrike - 50;
       const premiumReceived = Math.round(o.price * 0.012 * 100) / 100;
       const spreadWidth = 50;
@@ -87,6 +94,14 @@ export default function FuturesScanners() {
     });
   };
 
+  const absHash = (s: string) => {
+    let hash = 0;
+    for (let i = 0; i < s.length; i++) {
+      hash = s.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return Math.abs(hash);
+  };
+
   const getHighIV = () => {
     return opportunities.map((o, idx) => {
       const tickerHash = absHash(o.ticker);
@@ -103,32 +118,23 @@ export default function FuturesScanners() {
     }).sort((a, b) => b.iv_rank - a.iv_rank).slice(0, 10);
   };
 
-  const absHash = (s: string) => {
-    let hash = 0;
-    for (let i = 0; i < s.length; i++) {
-      hash = s.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    return Math.abs(hash);
-  };
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-      
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px", width: "100%", maxWidth: "100%", minWidth: 0 }}>
       {/* Sub-tab Navigation */}
-      <div className="glass-panel" style={{ padding: "12px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+      <div className="glass-panel hide-scrollbar" style={{ padding: "8px", display: "flex", gap: "6px", overflowX: "auto", width: "100%", maxWidth: "100%", minWidth: 0 }}>
         {[
-          { id: "covered_futures", label: "📦 Covered Futures Scanner", desc: "Buy Futures + Sell Call" },
-          { id: "cash_secured_put", label: "💰 Cash Secured Put Scanner", desc: "Write OTM Puts for premium" },
-          { id: "bull_put_spread", label: "🛡️ Bull Put Spread Scanner", desc: "Defined-risk credit spreads" },
-          { id: "wheel", label: "🔄 Wheel Strategy Tracker", desc: "Rotational Put-Call harvesting" },
-          { id: "high_iv", label: "🔥 High IV Premium Harvest", desc: "Sort by highest option decay efficiency" }
+          { id: "covered_futures", label: "📦 Covered Futures", desc: "Buy Futures + Sell Call" },
+          { id: "cash_secured_put", label: "💰 Cash Secured Put", desc: "Write OTM Puts" },
+          { id: "bull_put_spread", label: "🛡️ Bull Put Spread", desc: "Credit spreads" },
+          { id: "wheel", label: "🔄 Wheel Strategy", desc: "Rotational harvesting" },
+          { id: "high_iv", label: "🔥 High IV Decay", desc: "Highest decay efficiency" }
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveSubTab(tab.id as ScannerTab)}
             style={{
-              padding: "8px 16px",
-              background: activeSubTab === tab.id ? "var(--accent-ml)" : "none",
+              padding: "8px 12px",
+              background: activeSubTab === tab.id ? "var(--accent-ml)" : "rgba(0,0,0,0.02)",
               color: activeSubTab === tab.id ? "#ffffff" : "var(--color-text-secondary)",
               border: "1px solid " + (activeSubTab === tab.id ? "var(--accent-ml)" : "var(--border-subtle)"),
               borderRadius: "8px",
@@ -136,12 +142,13 @@ export default function FuturesScanners() {
               fontWeight: "700",
               cursor: "pointer",
               textAlign: "left",
-              flex: "1 1 180px",
-              transition: "all 0.15s"
+              flex: "0 0 auto",
+              transition: "all 0.15s",
+              whiteSpace: "nowrap"
             }}
           >
-            <div style={{ fontWeight: "800" }}>{tab.label}</div>
-            <div style={{ fontSize: "10px", opacity: 0.8, marginTop: "2px", fontWeight: "500" }}>{tab.desc}</div>
+            <div>{tab.label}</div>
+            <div style={{ fontSize: "9px", opacity: 0.8, marginTop: "2px", fontWeight: "500" }}>{tab.desc}</div>
           </button>
         ))}
       </div>
@@ -149,147 +156,305 @@ export default function FuturesScanners() {
       {/* Grid Scanner Output */}
       <div className="glass-panel" style={{ padding: "0px", overflow: "hidden" }}>
         {activeSubTab === "covered_futures" && (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", textAlign: "left" }}>
-            <thead>
-              <tr style={{ background: "rgba(0,0,0,0.02)", borderBottom: "1px solid var(--border-subtle)" }}>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Rank</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Stock</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Strategy Score</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Contract Option</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>POP</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>Monthly Yield</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>Expected Return</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <div className="table-desktop-view table-responsive-wrapper">
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", textAlign: "left" }}>
+                <thead>
+                  <tr style={{ background: "rgba(0,0,0,0.02)", borderBottom: "1px solid var(--border-subtle)" }}>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Rank</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Stock</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Strategy Score</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Contract Option</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>POP</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>Monthly Yield</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>Expected Return</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {opportunities.slice(0, 10).map((o, idx) => (
+                    <tr key={o.ticker} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                      <td style={{ padding: "12px 16px", fontWeight: "700" }}>#{idx + 1}</td>
+                      <td style={{ padding: "12px 16px", fontWeight: "800" }}>{o.ticker}</td>
+                      <td style={{ padding: "12px 16px" }}>
+                        <span style={{ background: "rgba(59, 130, 246, 0.08)", color: "#3b82f6", padding: "2px 8px", borderRadius: "20px", fontWeight: "700" }}>
+                          {o.strategy_score}
+                        </span>
+                      </td>
+                      <td style={{ padding: "12px 16px", color: "#ec4899", fontWeight: "700" }}>{o.option_contract}</td>
+                      <td style={{ padding: "12px 16px", textAlign: "center", color: "#10b981", fontWeight: "700" }}>{o.pop}%</td>
+                      <td style={{ padding: "12px 16px", textAlign: "center", fontWeight: "700" }}>{o.expected_yield.toFixed(2)}%</td>
+                      <td style={{ padding: "12px 16px", textAlign: "center", color: "#3b82f6", fontWeight: "700" }}>{o.expected_return.toFixed(2)}%</td>
+                      <td style={{ padding: "12px 16px", textAlign: "center" }}>
+                        <button
+                          onClick={() => handleOpenTrade(o.ticker)}
+                          style={{
+                            padding: "4px 8px",
+                            borderRadius: "4px",
+                            background: "rgba(5, 150, 105, 0.1)",
+                            border: "1px solid var(--color-buy)",
+                            color: "var(--color-buy)",
+                            fontSize: "11px",
+                            fontWeight: "700",
+                            cursor: "pointer"
+                          }}
+                        >
+                          + Paper Buy
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Cards View */}
+            <div className="cards-mobile-view" style={{ padding: "12px", gap: "10px" }}>
               {opportunities.slice(0, 10).map((o, idx) => (
-                <tr key={o.ticker} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-                  <td style={{ padding: "12px 16px", fontWeight: "700" }}>#{idx + 1}</td>
-                  <td style={{ padding: "12px 16px", fontWeight: "800" }}>{o.ticker}</td>
-                  <td style={{ padding: "12px 16px" }}>
-                    <span style={{ background: "rgba(59, 130, 246, 0.08)", color: "#3b82f6", padding: "2px 8px", borderRadius: "20px", fontWeight: "700" }}>
-                      {o.strategy_score}
+                <div key={o.ticker} className="glass-panel" style={{ padding: "12px", borderRadius: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <span style={{ fontWeight: "800", color: "var(--color-text-muted)" }}>#{idx + 1}</span>
+                      <span style={{ fontWeight: "900", fontSize: "15px", color: "var(--color-text-primary)" }}>{o.ticker}</span>
+                    </div>
+                    <span style={{ background: "rgba(59, 130, 246, 0.1)", color: "#3b82f6", padding: "2px 8px", borderRadius: "12px", fontWeight: "800", fontSize: "11px" }}>
+                      Score: {o.strategy_score}
                     </span>
-                  </td>
-                  <td style={{ padding: "12px 16px", color: "#ec4899", fontWeight: "700" }}>{o.option_contract}</td>
-                  <td style={{ padding: "12px 16px", textAlign: "center", color: "#10b981", fontWeight: "700" }}>{o.pop}%</td>
-                  <td style={{ padding: "12px 16px", textAlign: "center", fontWeight: "700" }}>{o.expected_yield.toFixed(2)}%</td>
-                  <td style={{ padding: "12px 16px", textAlign: "center", color: "#3b82f6", fontWeight: "700" }}>{o.expected_return.toFixed(2)}%</td>
-                </tr>
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#ec4899", fontWeight: "700", overflowWrap: "anywhere" }}>
+                    {o.option_contract}
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "6px", background: "rgba(0,0,0,0.02)", padding: "6px 8px", borderRadius: "6px", textAlign: "center", fontSize: "11px" }}>
+                    <div>
+                      <span style={{ fontSize: "9px", color: "var(--color-text-muted)" }}>POP</span>
+                      <div style={{ color: "#10b981", fontWeight: "800" }}>{o.pop}%</div>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: "9px", color: "var(--color-text-muted)" }}>YIELD</span>
+                      <div style={{ fontWeight: "800", color: "var(--color-text-primary)" }}>{o.expected_yield.toFixed(2)}%</div>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: "9px", color: "var(--color-text-muted)" }}>EXP RET</span>
+                      <div style={{ color: "#3b82f6", fontWeight: "800" }}>{o.expected_return.toFixed(2)}%</div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleOpenTrade(o.ticker)}
+                    style={{
+                      width: "100%",
+                      padding: "8px",
+                      borderRadius: "6px",
+                      background: "rgba(5, 150, 105, 0.08)",
+                      border: "1px solid var(--color-buy)",
+                      color: "var(--color-buy)",
+                      fontSize: "12px",
+                      fontWeight: "800",
+                      cursor: "pointer"
+                    }}
+                  >
+                    + Paper Buy {o.ticker}
+                  </button>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          </>
         )}
 
         {activeSubTab === "cash_secured_put" && (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", textAlign: "left" }}>
-            <thead>
-              <tr style={{ background: "rgba(0,0,0,0.02)", borderBottom: "1px solid var(--border-subtle)" }}>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Rank</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Stock</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Spot Price</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Put Option Contract</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Premium (Est)</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>POP</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>Expected Monthly Yield</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <div className="table-desktop-view table-responsive-wrapper">
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", textAlign: "left" }}>
+                <thead>
+                  <tr style={{ background: "rgba(0,0,0,0.02)", borderBottom: "1px solid var(--border-subtle)" }}>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Rank</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Stock</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Spot Price</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Put Option Contract</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Premium (Est)</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>POP</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>Expected Monthly Yield</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {getCashSecuredPuts().map((csp) => (
+                    <tr key={csp.ticker} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                      <td style={{ padding: "12px 16px", fontWeight: "700" }}>#{csp.rank}</td>
+                      <td style={{ padding: "12px 16px", fontWeight: "800" }}>{csp.ticker}</td>
+                      <td style={{ padding: "12px 16px" }}>₹{csp.price.toLocaleString("en-IN")}</td>
+                      <td style={{ padding: "12px 16px", color: "#3b82f6", fontWeight: "700" }}>{csp.put_contract}</td>
+                      <td style={{ padding: "12px 16px" }}>₹{csp.premium}</td>
+                      <td style={{ padding: "12px 16px", textAlign: "center", color: "#10b981", fontWeight: "700" }}>{csp.pop}%</td>
+                      <td style={{ padding: "12px 16px", textAlign: "center", color: "#3b82f6", fontWeight: "700" }}>{csp.yield.toFixed(2)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Cards View */}
+            <div className="cards-mobile-view" style={{ padding: "12px", gap: "10px" }}>
               {getCashSecuredPuts().map((csp) => (
-                <tr key={csp.ticker} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-                  <td style={{ padding: "12px 16px", fontWeight: "700" }}>#{csp.rank}</td>
-                  <td style={{ padding: "12px 16px", fontWeight: "800" }}>{csp.ticker}</td>
-                  <td style={{ padding: "12px 16px" }}>₹{csp.price.toLocaleString("en-IN")}</td>
-                  <td style={{ padding: "12px 16px", color: "#3b82f6", fontWeight: "700" }}>{csp.put_contract}</td>
-                  <td style={{ padding: "12px 16px" }}>₹{csp.premium}</td>
-                  <td style={{ padding: "12px 16px", textAlign: "center", color: "#10b981", fontWeight: "700" }}>{csp.pop}%</td>
-                  <td style={{ padding: "12px 16px", textAlign: "center", color: "#3b82f6", fontWeight: "700" }}>{csp.yield.toFixed(2)}%</td>
-                </tr>
+                <div key={csp.ticker} className="glass-panel" style={{ padding: "12px", borderRadius: "10px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
+                    <span style={{ fontWeight: "900", fontSize: "15px", color: "var(--color-text-primary)" }}>{csp.ticker}</span>
+                    <span style={{ fontWeight: "700", color: "var(--color-text-secondary)" }}>₹{csp.price.toLocaleString("en-IN")}</span>
+                  </div>
+                  <div style={{ color: "#3b82f6", fontWeight: "700", fontSize: "11px", overflowWrap: "anywhere" }}>{csp.put_contract}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "6px", fontSize: "11px", color: "var(--color-text-muted)", marginTop: "2px" }}>
+                    <span>Premium: <strong>₹{csp.premium}</strong></span>
+                    <span>POP: <strong style={{ color: "#10b981" }}>{csp.pop}%</strong></span>
+                    <span>Yield: <strong style={{ color: "#3b82f6" }}>{csp.yield.toFixed(2)}%</strong></span>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          </>
         )}
 
         {activeSubTab === "bull_put_spread" && (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", textAlign: "left" }}>
-            <thead>
-              <tr style={{ background: "rgba(0,0,0,0.02)", borderBottom: "1px solid var(--border-subtle)" }}>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Rank</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Stock</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Bull Put Spread Setup</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "right" }}>Net Credit Received</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "right" }}>Max Defined Risk</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>POP</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <div className="table-desktop-view table-responsive-wrapper">
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", textAlign: "left" }}>
+                <thead>
+                  <tr style={{ background: "rgba(0,0,0,0.02)", borderBottom: "1px solid var(--border-subtle)" }}>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Rank</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Stock</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Bull Put Spread Setup</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "right" }}>Net Credit Received</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "right" }}>Max Defined Risk</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>POP</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {getBullPutSpreads().map((bps) => (
+                    <tr key={bps.ticker} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                      <td style={{ padding: "12px 16px", fontWeight: "700" }}>#{bps.rank}</td>
+                      <td style={{ padding: "12px 16px", fontWeight: "800" }}>{bps.ticker}</td>
+                      <td style={{ padding: "12px 16px", fontWeight: "700", color: "#10b981" }}>{bps.spread}</td>
+                      <td style={{ padding: "12px 16px", textAlign: "right", color: "#10b981", fontWeight: "700" }}>₹{bps.net_credit.toFixed(2)}</td>
+                      <td style={{ padding: "12px 16px", textAlign: "right", color: "#ef4444" }}>₹{bps.max_loss.toFixed(2)}</td>
+                      <td style={{ padding: "12px 16px", textAlign: "center", color: "#10b981", fontWeight: "700" }}>{bps.pop}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Cards View */}
+            <div className="cards-mobile-view" style={{ padding: "12px", gap: "10px" }}>
               {getBullPutSpreads().map((bps) => (
-                <tr key={bps.ticker} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-                  <td style={{ padding: "12px 16px", fontWeight: "700" }}>#{bps.rank}</td>
-                  <td style={{ padding: "12px 16px", fontWeight: "800" }}>{bps.ticker}</td>
-                  <td style={{ padding: "12px 16px", fontWeight: "700", color: "#10b981" }}>{bps.spread}</td>
-                  <td style={{ padding: "12px 16px", textAlign: "right", color: "#10b981", fontWeight: "700" }}>₹{bps.net_credit.toFixed(2)}</td>
-                  <td style={{ padding: "12px 16px", textAlign: "right", color: "#ef4444" }}>₹{bps.max_loss.toFixed(2)}</td>
-                  <td style={{ padding: "12px 16px", textAlign: "center", color: "#10b981", fontWeight: "700" }}>{bps.pop}%</td>
-                </tr>
+                <div key={bps.ticker} className="glass-panel" style={{ padding: "12px", borderRadius: "10px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
+                    <span style={{ fontWeight: "900", fontSize: "15px", color: "var(--color-text-primary)" }}>{bps.ticker}</span>
+                    <span style={{ color: "#10b981", fontWeight: "800", fontSize: "12px" }}>POP: {bps.pop}%</span>
+                  </div>
+                  <div style={{ color: "#10b981", fontWeight: "700", fontSize: "11px", overflowWrap: "anywhere" }}>{bps.spread}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "6px", fontSize: "11px", color: "var(--color-text-muted)" }}>
+                    <span>Credit: <strong style={{ color: "#10b981" }}>₹{bps.net_credit.toFixed(2)}</strong></span>
+                    <span>Max Risk: <strong style={{ color: "#ef4444" }}>₹{bps.max_loss.toFixed(2)}</strong></span>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          </>
         )}
 
         {activeSubTab === "wheel" && (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", textAlign: "left" }}>
-            <thead>
-              <tr style={{ background: "rgba(0,0,0,0.02)", borderBottom: "1px solid var(--border-subtle)" }}>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Rank</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Stock</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>IV Rank (%)</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Active Strategy Phase</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>Est annual yield</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>Avg POP</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <div className="table-desktop-view table-responsive-wrapper">
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", textAlign: "left" }}>
+                <thead>
+                  <tr style={{ background: "rgba(0,0,0,0.02)", borderBottom: "1px solid var(--border-subtle)" }}>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Rank</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Stock</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>IV Rank (%)</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Active Strategy Phase</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>Est annual yield</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>Avg POP</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {getWheelSetups().map((w) => (
+                    <tr key={w.ticker} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                      <td style={{ padding: "12px 16px", fontWeight: "700" }}>#{w.rank}</td>
+                      <td style={{ padding: "12px 16px", fontWeight: "800" }}>{w.ticker}</td>
+                      <td style={{ padding: "12px 16px", textAlign: "center", fontWeight: "700", color: "#3b82f6" }}>{w.iv_rank}%</td>
+                      <td style={{ padding: "12px 16px", fontWeight: "700", color: w.phase.includes("Secured") ? "#ec4899" : "#3b82f6" }}>{w.phase}</td>
+                      <td style={{ padding: "12px 16px", textAlign: "center", color: "#10b981", fontWeight: "700" }}>{(w.yield * 12).toFixed(1)}%</td>
+                      <td style={{ padding: "12px 16px", textAlign: "center", fontWeight: "700" }}>{w.pop}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Cards View */}
+            <div className="cards-mobile-view" style={{ padding: "12px", gap: "10px" }}>
               {getWheelSetups().map((w) => (
-                <tr key={w.ticker} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-                  <td style={{ padding: "12px 16px", fontWeight: "700" }}>#{w.rank}</td>
-                  <td style={{ padding: "12px 16px", fontWeight: "800" }}>{w.ticker}</td>
-                  <td style={{ padding: "12px 16px", textAlign: "center", fontWeight: "700", color: "#3b82f6" }}>{w.iv_rank}%</td>
-                  <td style={{ padding: "12px 16px", fontWeight: "700", color: w.phase.includes("Secured") ? "#ec4899" : "#3b82f6" }}>{w.phase}</td>
-                  <td style={{ padding: "12px 16px", textAlign: "center", color: "#10b981", fontWeight: "700" }}>{(w.yield * 12).toFixed(1)}%</td>
-                  <td style={{ padding: "12px 16px", textAlign: "center", fontWeight: "700" }}>{w.pop}%</td>
-                </tr>
+                <div key={w.ticker} className="glass-panel" style={{ padding: "12px", borderRadius: "10px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
+                    <span style={{ fontWeight: "900", fontSize: "15px", color: "var(--color-text-primary)" }}>{w.ticker}</span>
+                    <span style={{ color: "#3b82f6", fontWeight: "800", fontSize: "12px" }}>IV Rank: {w.iv_rank}%</span>
+                  </div>
+                  <div style={{ color: w.phase.includes("Secured") ? "#ec4899" : "#3b82f6", fontWeight: "700", fontSize: "11px" }}>{w.phase}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "6px", fontSize: "11px", color: "var(--color-text-muted)" }}>
+                    <span>Est Yield: <strong style={{ color: "#10b981" }}>{(w.yield * 12).toFixed(1)}%</strong></span>
+                    <span>POP: <strong>{w.pop}%</strong></span>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          </>
         )}
 
         {activeSubTab === "high_iv" && (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", textAlign: "left" }}>
-            <thead>
-              <tr style={{ background: "rgba(0,0,0,0.02)", borderBottom: "1px solid var(--border-subtle)" }}>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Rank</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Stock</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>Implied Volatility (IV)</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>IV Rank</th>
-                <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>Premium Yield (Monthly)</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <div className="table-desktop-view table-responsive-wrapper">
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", textAlign: "left" }}>
+                <thead>
+                  <tr style={{ background: "rgba(0,0,0,0.02)", borderBottom: "1px solid var(--border-subtle)" }}>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Rank</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)" }}>Stock</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>Implied Volatility (IV)</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>IV Rank</th>
+                    <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", textAlign: "center" }}>Premium Yield (Monthly)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {getHighIV().map((hiv, idx) => (
+                    <tr key={hiv.ticker} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                      <td style={{ padding: "12px 16px", fontWeight: "700" }}>#{idx + 1}</td>
+                      <td style={{ padding: "12px 16px", fontWeight: "800" }}>{hiv.ticker}</td>
+                      <td style={{ padding: "12px 16px", textAlign: "center", color: "#ef4444", fontWeight: "700" }}>{hiv.iv}%</td>
+                      <td style={{ padding: "12px 16px", textAlign: "center", color: "#ef4444", fontWeight: "700", background: "rgba(239, 68, 68, 0.04)" }}>{hiv.iv_rank}%</td>
+                      <td style={{ padding: "12px 16px", textAlign: "center", color: "#10b981", fontWeight: "700" }}>{hiv.yield.toFixed(2)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Cards View */}
+            <div className="cards-mobile-view" style={{ padding: "12px", gap: "10px" }}>
               {getHighIV().map((hiv, idx) => (
-                <tr key={hiv.ticker} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-                  <td style={{ padding: "12px 16px", fontWeight: "700" }}>#{idx + 1}</td>
-                  <td style={{ padding: "12px 16px", fontWeight: "800" }}>{hiv.ticker}</td>
-                  <td style={{ padding: "12px 16px", textAlign: "center", color: "#ef4444", fontWeight: "700" }}>{hiv.iv}%</td>
-                  <td style={{ padding: "12px 16px", textAlign: "center", color: "#ef4444", fontWeight: "700", background: "rgba(239, 68, 68, 0.04)" }}>{hiv.iv_rank}%</td>
-                  <td style={{ padding: "12px 16px", textAlign: "center", color: "#10b981", fontWeight: "700" }}>{hiv.yield.toFixed(2)}%</td>
-                </tr>
+                <div key={hiv.ticker} className="glass-panel" style={{ padding: "12px", borderRadius: "10px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <span style={{ fontWeight: "800", color: "var(--color-text-muted)" }}>#{idx + 1}</span>
+                      <span style={{ fontWeight: "900", fontSize: "15px", color: "var(--color-text-primary)" }}>{hiv.ticker}</span>
+                    </div>
+                    <span style={{ color: "#ef4444", fontWeight: "800", fontSize: "12px" }}>IV: {hiv.iv}%</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "6px", fontSize: "11px", color: "var(--color-text-muted)" }}>
+                    <span>IV Rank: <strong style={{ color: "#ef4444" }}>{hiv.iv_rank}%</strong></span>
+                    <span>Monthly Yield: <strong style={{ color: "#10b981" }}>{hiv.yield.toFixed(2)}%</strong></span>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          </>
         )}
       </div>
-
     </div>
   );
 }

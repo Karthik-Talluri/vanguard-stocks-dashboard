@@ -61,19 +61,19 @@ export default function BTSTDashboard({ onSelectStock }: BTSTDashboardProps) {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "20px", width: "100%", padding: "10px" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px", width: "100%", padding: "0px" }}>
       
       {/* Overview Intro Card */}
       <div style={{
         background: "linear-gradient(135deg, rgba(124, 77, 255, 0.08) 0%, rgba(0, 0, 0, 0) 100%)",
         border: "1px solid var(--border-subtle)",
         borderRadius: "12px",
-        padding: "20px",
+        padding: "clamp(14px, 4vw, 20px)",
         display: "flex",
         flexDirection: "column",
         gap: "6px"
       }}>
-        <h2 style={{ fontSize: "18px", fontWeight: "800", color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: "8px", margin: 0 }}>
+        <h2 style={{ fontSize: "clamp(16px, 4.5vw, 18px)", fontWeight: "800", color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: "8px", margin: 0 }}>
           ⚡ Institutional BTST Workspace
         </h2>
         <p style={{ fontSize: "12px", color: "var(--color-text-muted)", margin: 0, lineHeight: "1.5" }}>
@@ -81,15 +81,16 @@ export default function BTSTDashboard({ onSelectStock }: BTSTDashboardProps) {
         </p>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "20px" }}>
+      <div className="responsive-split-grid" style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "20px" }}>
         
         {/* Left Side: Top BTST Opportunities */}
-        <div style={{ border: "1px solid var(--border-subtle)", borderRadius: "12px", background: "var(--color-bg-secondary)", padding: "16px", display: "flex", flexDirection: "column", gap: "14px" }}>
+        <div style={{ border: "1px solid var(--border-subtle)", borderRadius: "12px", background: "var(--color-bg-secondary)", padding: "clamp(12px, 3.5vw, 16px)", display: "flex", flexDirection: "column", gap: "14px", minWidth: 0 }}>
           <h3 style={{ fontSize: "14px", fontWeight: "800", color: "var(--color-text-primary)", margin: 0 }}>
             🔥 Top BTST Opportunities (Master Ranked)
           </h3>
           
-          <div style={{ overflowX: "auto" }}>
+          {/* Desktop Table View */}
+          <div className="table-desktop-view" style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border-subtle)", textAlign: "left" }}>
@@ -146,17 +147,60 @@ export default function BTSTDashboard({ onSelectStock }: BTSTDashboardProps) {
               </tbody>
             </table>
           </div>
+
+          {/* Mobile Cards View */}
+          <div className="cards-mobile-view" style={{ flexDirection: "column", gap: "8px" }}>
+            {data.top_picks.map((item, index) => (
+              <div
+                key={item.ticker}
+                onClick={() => setSelectedTicker(item.ticker)}
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid " + (selectedTicker === item.ticker ? "var(--accent-ml)" : "var(--border-subtle)"),
+                  background: selectedTicker === item.ticker ? "rgba(79, 70, 229, 0.06)" : "var(--bg-card)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "6px",
+                  cursor: "pointer"
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: "800", color: "var(--color-text-muted)" }}>#{index + 1}</span>
+                    <span style={{ fontWeight: "900", color: "var(--color-text-primary)", fontSize: "14px" }}>{item.ticker}</span>
+                    <span style={{ fontSize: "10px", color: "var(--color-text-muted)" }}>({item.sector})</span>
+                  </div>
+                  <span style={{
+                    fontSize: "11px",
+                    fontWeight: "800",
+                    color: "var(--accent-ml)",
+                    background: "rgba(79, 70, 229, 0.1)",
+                    padding: "2px 6px",
+                    borderRadius: "4px"
+                  }}>
+                    Score: {item.btst_score}
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "6px", fontSize: "11px", color: "var(--color-text-secondary)" }}>
+                  <span>Win Prob: <strong style={{ color: "var(--color-buy)" }}>{item.prob_positive_close}%</strong></span>
+                  <span>Exp Move: <strong style={{ color: "var(--color-buy)" }}>{item.expected_move}</strong></span>
+                  <span style={{ fontWeight: "700", color: getRiskColor(item.risk) }}>{item.risk} Risk</span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Right Side: Deep-Dive Panel */}
         {selectedStock && (
-          <div style={{ border: "1px solid var(--border-subtle)", borderRadius: "12px", background: "var(--color-bg-secondary)", padding: "20px", display: "flex", flexDirection: "column", gap: "20px" }}>
+          <div style={{ border: "1px solid var(--border-subtle)", borderRadius: "12px", background: "var(--color-bg-secondary)", padding: "clamp(12px, 3.5vw, 20px)", display: "flex", flexDirection: "column", gap: "16px", minWidth: 0 }}>
             
             {/* Header detail */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
               <div>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span style={{ fontSize: "20px", fontWeight: "800", color: "var(--color-text-primary)" }}>{selectedStock.ticker}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "clamp(17px, 4.5vw, 20px)", fontWeight: "800", color: "var(--color-text-primary)" }}>{selectedStock.ticker}</span>
                   <span style={{ fontSize: "11px", color: "var(--color-text-muted)", fontWeight: "600", border: "1px solid var(--border-subtle)", padding: "2px 6px", borderRadius: "4px" }}>
                     {selectedStock.sector}
                   </span>
@@ -191,10 +235,10 @@ export default function BTSTDashboard({ onSelectStock }: BTSTDashboardProps) {
             <hr style={{ border: "none", borderTop: "1px solid var(--border-subtle)", margin: 0 }} />
 
             {/* BTST Score Gauge & Key stats */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: "16px", alignItems: "center" }}>
+            <div className="target-box-grid" style={{ alignItems: "center" }}>
               
               {/* Score Badge circle */}
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", borderRight: "1px solid var(--border-subtle)", paddingRight: "16px" }}>
+              <div className="target-box-divider" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" }}>
                 <div style={{ fontSize: "10px", fontWeight: "700", color: "var(--color-text-muted)", textTransform: "uppercase" }}>BTST Score</div>
                 <div style={{
                   width: "76px",
@@ -285,7 +329,7 @@ export default function BTSTDashboard({ onSelectStock }: BTSTDashboardProps) {
                   { label: "Market Mood (5%)", val: selectedStock.factor_breakdown.market_mood },
                   { label: "Global Setup (5%)", val: selectedStock.factor_breakdown.global_setup }
                 ].map((f) => (
-                  <div key={f.label} style={{ display: "grid", gridTemplateColumns: "1.2fr 2fr 40px", alignItems: "center", gap: "10px", fontSize: "10px" }}>
+                  <div key={f.label} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(0, 1.8fr) 36px", alignItems: "center", gap: "8px", fontSize: "10px" }}>
                     <span style={{ color: "var(--color-text-muted)", fontWeight: "600" }}>{f.label}</span>
                     <div style={{ height: "4px", background: "var(--border-subtle)", borderRadius: "2px" }}>
                       <div style={{ height: "100%", width: `${f.val}%`, background: "var(--accent-ml)", borderRadius: "2px" }} />
@@ -302,10 +346,10 @@ export default function BTSTDashboard({ onSelectStock }: BTSTDashboardProps) {
       </div>
 
       {/* Scanners Grid Header */}
-      <div style={{ border: "1px solid var(--border-subtle)", borderRadius: "12px", background: "var(--color-bg-secondary)", padding: "16px", display: "flex", flexDirection: "column", gap: "14px" }}>
+      <div style={{ border: "1px solid var(--border-subtle)", borderRadius: "12px", background: "var(--color-bg-secondary)", padding: "clamp(12px, 3.5vw, 16px)", display: "flex", flexDirection: "column", gap: "14px", minWidth: 0 }}>
         
         {/* Scanner tabs */}
-        <div style={{ display: "flex", borderBottom: "1px solid var(--border-subtle)", gap: "16px" }}>
+        <div className="hide-scrollbar" style={{ display: "flex", borderBottom: "1px solid var(--border-subtle)", gap: "14px", overflowX: "auto", width: "100%" }}>
           {[
             { id: "long_buildup", label: "Long Build-up" },
             { id: "breakouts", label: "Breakout Scanner" },
@@ -326,7 +370,9 @@ export default function BTSTDashboard({ onSelectStock }: BTSTDashboardProps) {
                 fontSize: "12px",
                 fontWeight: "700",
                 cursor: "pointer",
-                transition: "all 0.2s"
+                transition: "all 0.2s",
+                whiteSpace: "nowrap",
+                flexShrink: 0
               }}
             >
               {tab.label}
@@ -335,7 +381,7 @@ export default function BTSTDashboard({ onSelectStock }: BTSTDashboardProps) {
         </div>
 
         {/* Scanner Results rendering */}
-        <div style={{ minHeight: "150px" }}>
+        <div className="table-responsive-wrapper" style={{ minHeight: "150px" }}>
           {activeScannerTab !== "risk_events" ? (
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px", textAlign: "left" }}>
               <thead>
@@ -420,7 +466,7 @@ export default function BTSTDashboard({ onSelectStock }: BTSTDashboardProps) {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               {data.risk_events.map((re) => (
-                <div key={re.ticker} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", border: "1px solid var(--border-subtle)", borderRadius: "6px" }}>
+                <div key={re.ticker} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px", padding: "10px 12px", border: "1px solid var(--border-subtle)", borderRadius: "6px" }}>
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                       <span style={{ fontWeight: "700", fontSize: "12px", color: "var(--color-text-primary)" }}>{re.ticker}</span>

@@ -65,6 +65,19 @@ export default function TradeModal({
   const handleQuickQuantity = (qty: number) => {
     setQuantity(Math.max(1, qty));
     setError(null);
+    setConfirming(false);
+  };
+
+  const handlePercentageQuantity = (pct: number) => {
+    if (isBuy) {
+      const shares = Math.floor((availableCash * pct) / (currentPrice || 1));
+      setQuantity(Math.max(1, shares));
+    } else {
+      const shares = Math.floor(ownedQuantity * pct);
+      setQuantity(Math.max(1, shares));
+    }
+    setError(null);
+    setConfirming(false);
   };
 
   const handleExecute = async () => {
@@ -123,53 +136,43 @@ export default function TradeModal({
       style={{
         position: "fixed",
         inset: 0,
-        backgroundColor: "rgba(0, 0, 0, 0.75)",
+        backgroundColor: "rgba(0, 0, 0, 0.7)",
         backdropFilter: "blur(6px)",
+        WebkitBackdropFilter: "blur(6px)",
         display: "flex",
-        alignItems: "center",
+        alignItems: "flex-end", // Bottom sheet on mobile
         justifyContent: "center",
-        zIndex: 9999,
-        padding: "16px"
+        zIndex: 99999,
+        padding: 0
       }}
       onClick={(e) => {
         if (e.target === e.currentTarget && !loading) onClose();
       }}
     >
-      <div 
-        className="glass-panel animate-fade-in"
-        style={{
-          width: "100%",
-          maxWidth: "460px",
-          background: "var(--bg-card)",
-          border: "1px solid var(--border-subtle)",
-          borderRadius: "14px",
-          padding: "24px",
-          boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "18px"
-        }}
-      >
-        {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+      <div className="glass-panel animate-fade-in trade-modal-container">
+        {/* Mobile Drag Bar */}
+        <div style={{ width: "40px", height: "4px", borderRadius: "2px", background: "var(--border-subtle)", margin: "0 auto 4px auto" }} />
+
+        {/* Header: Stock, Price, Close button */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
               <span style={{ fontSize: "20px", fontWeight: "900", color: "var(--color-text-primary)" }}>{ticker}</span>
               <span style={{ 
                 fontSize: "10px", 
-                fontWeight: "700", 
+                fontWeight: "800", 
                 padding: "2px 8px", 
                 borderRadius: "12px", 
-                background: "rgba(139, 92, 246, 0.15)", 
-                color: "var(--accent-ml)",
-                border: "1px solid rgba(139, 92, 246, 0.3)",
+                background: isBuy ? "rgba(5, 150, 105, 0.1)" : "rgba(220, 38, 38, 0.1)", 
+                color: isBuy ? "var(--color-buy)" : "var(--color-sell)",
+                border: `1px solid ${isBuy ? "rgba(5, 150, 105, 0.3)" : "rgba(220, 38, 38, 0.3)"}`,
                 textTransform: "uppercase"
               }}>
-                Simulated Market Order
+                NSE Live Order
               </span>
             </div>
-            <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "4px" }}>
-              NSE Real-Time Price: <strong style={{ color: "var(--color-text-primary)" }}>₹{currentPrice.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+            <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
+              Live Price: <strong style={{ color: "var(--color-text-primary)", fontSize: "14px" }}>₹{currentPrice.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
             </div>
           </div>
 
@@ -177,133 +180,148 @@ export default function TradeModal({
             onClick={onClose}
             disabled={loading}
             style={{
-              background: "transparent",
-              border: "none",
+              background: "rgba(0,0,0,0.04)",
+              border: "1px solid var(--border-subtle)",
+              borderRadius: "50%",
+              width: "32px",
+              height: "32px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
               color: "var(--color-text-muted)",
-              fontSize: "20px",
+              fontSize: "16px",
               cursor: "pointer",
-              padding: "4px"
+              flexShrink: 0
             }}
           >
             ✕
           </button>
         </div>
 
-        {/* Active Trader Profile Pill */}
+        {/* Trader Profile Pill */}
         <div style={{
           padding: "6px 12px",
           borderRadius: "8px",
-          background: "rgba(99, 102, 241, 0.12)",
-          border: "1px solid rgba(99, 102, 241, 0.3)",
+          background: "rgba(79, 70, 229, 0.08)",
+          border: "1px solid rgba(79, 70, 229, 0.25)",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          fontSize: "12px",
+          flexWrap: "wrap",
+          gap: "6px",
+          fontSize: "11px",
           color: "var(--color-text-primary)"
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             <span>👤</span>
-            <span>Trading Account: <strong style={{ color: "#a5b4fc" }}>{activeUser.name}</strong></span>
+            <span>Account: <strong style={{ color: "var(--accent-ml)" }}>{activeUser.name}</strong></span>
           </div>
-          <span style={{ fontSize: "11px", color: "var(--color-text-muted)" }}>₹1,00,000 Virtual Capital</span>
+          <span style={{ color: "var(--color-text-muted)", fontWeight: "600" }}>Zero Brokerage</span>
         </div>
 
-        {/* Disclaimer Banner */}
-        <div style={{
-          padding: "8px 12px",
-          borderRadius: "8px",
-          background: "rgba(255, 179, 0, 0.08)",
-          border: "1px solid rgba(255, 179, 0, 0.25)",
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          fontSize: "11px",
-          color: "#f59e0b"
-        }}>
-          <span>🛡️</span>
-          <span><strong>Paper Trading:</strong> Virtual simulated funds only. No real money or brokers involved.</span>
-        </div>
-
-        {/* Order Type Toggle */}
+        {/* Order Type Toggle (Zerodha Style Segmented Buttons) */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
           <button
             type="button"
             onClick={() => { setOrderType("BUY"); setConfirming(false); setError(null); }}
             style={{
-              padding: "10px",
-              borderRadius: "8px",
-              fontWeight: "800",
+              padding: "12px",
+              borderRadius: "10px",
+              fontWeight: "900",
               fontSize: "14px",
               cursor: "pointer",
-              transition: "all 0.2s",
-              background: isBuy ? "var(--color-buy)" : "rgba(255, 255, 255, 0.03)",
+              transition: "all 0.15s ease",
+              background: isBuy ? "var(--color-buy)" : "rgba(0, 0, 0, 0.03)",
               color: isBuy ? "#ffffff" : "var(--color-text-secondary)",
               border: isBuy ? "1px solid var(--color-buy)" : "1px solid var(--border-subtle)",
-              boxShadow: isBuy ? "0 4px 12px rgba(16, 185, 129, 0.3)" : "none"
+              boxShadow: isBuy ? "0 4px 14px rgba(5, 150, 105, 0.35)" : "none",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "6px"
             }}
           >
-            🟢 BUY
+            <span>🟢</span>
+            <span>BUY</span>
           </button>
           <button
             type="button"
             onClick={() => { setOrderType("SELL"); setConfirming(false); setError(null); }}
             style={{
-              padding: "10px",
-              borderRadius: "8px",
-              fontWeight: "800",
+              padding: "12px",
+              borderRadius: "10px",
+              fontWeight: "900",
               fontSize: "14px",
               cursor: "pointer",
-              transition: "all 0.2s",
-              background: !isBuy ? "var(--color-sell)" : "rgba(255, 255, 255, 0.03)",
+              transition: "all 0.15s ease",
+              background: !isBuy ? "var(--color-sell)" : "rgba(0, 0, 0, 0.03)",
               color: !isBuy ? "#ffffff" : "var(--color-text-secondary)",
               border: !isBuy ? "1px solid var(--color-sell)" : "1px solid var(--border-subtle)",
-              boxShadow: !isBuy ? "0 4px 12px rgba(239, 68, 68, 0.3)" : "none"
+              boxShadow: !isBuy ? "0 4px 14px rgba(220, 38, 38, 0.35)" : "none",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "6px"
             }}
           >
-            🔴 SELL
+            <span>🔴</span>
+            <span>SELL</span>
           </button>
         </div>
 
-        {/* Account Available Balance Summary */}
+        {/* Balance Status Card */}
         <div style={{
           display: "flex",
           justifyContent: "space-between",
-          padding: "10px 14px",
-          background: "rgba(0, 0, 0, 0.2)",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "6px",
+          padding: "8px 12px",
+          background: "rgba(0, 0, 0, 0.02)",
           borderRadius: "8px",
           border: "1px solid var(--border-subtle)",
           fontSize: "12px"
         }}>
           <span style={{ color: "var(--color-text-secondary)" }}>
-            {isBuy ? "Available Virtual Cash:" : "Owned Shares Available:"}
+            {isBuy ? "Available Virtual Cash:" : "Owned Shares in Holding:"}
           </span>
           <span style={{ fontWeight: "800", color: isBuy ? (hasSufficientCash ? "var(--color-buy)" : "var(--color-sell)") : (hasSufficientShares ? "var(--color-text-primary)" : "var(--color-sell)") }}>
             {isBuy ? `₹${availableCash.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : `${ownedQuantity} shares`}
           </span>
         </div>
 
-        {/* Quantity Input */}
+        {/* Quantity Stepper & Input */}
         <div>
-          <label style={{ fontSize: "11px", fontWeight: "700", color: "var(--color-text-secondary)", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>
-            Number of Shares
-          </label>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px", marginBottom: "6px" }}>
+            <label style={{ fontSize: "11px", fontWeight: "800", color: "var(--color-text-secondary)", textTransform: "uppercase" }}>
+              Quantity (Shares)
+            </label>
+            <span style={{ fontSize: "11px", color: "var(--color-text-muted)" }}>
+              {isBuy ? `Max: ${maxBuyShares}` : `Owned: ${ownedQuantity}`}
+            </span>
+          </div>
+
           <div style={{ display: "flex", gap: "8px" }}>
             <button
               type="button"
               onClick={() => handleQuickQuantity(quantity - 1)}
               style={{
-                width: "40px",
-                height: "40px",
-                background: "rgba(255, 255, 255, 0.05)",
+                width: "48px",
+                height: "48px",
+                background: "rgba(0, 0, 0, 0.04)",
                 border: "1px solid var(--border-subtle)",
-                borderRadius: "6px",
+                borderRadius: "8px",
                 color: "var(--color-text-primary)",
-                fontSize: "18px",
-                fontWeight: "700",
-                cursor: "pointer"
+                fontSize: "20px",
+                fontWeight: "800",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0
               }}
             >
-              -
+              −
             </button>
             <input
               type="number"
@@ -317,13 +335,15 @@ export default function TradeModal({
               }}
               style={{
                 flex: 1,
-                padding: "8px 12px",
-                fontSize: "16px",
-                fontWeight: "800",
+                minWidth: 0,
+                width: "100%",
+                padding: "10px 12px",
+                fontSize: "18px",
+                fontWeight: "900",
                 textAlign: "center",
-                borderRadius: "6px",
+                borderRadius: "8px",
                 border: "1px solid var(--border-subtle)",
-                background: "rgba(0, 0, 0, 0.25)",
+                background: "var(--bg-card)",
                 color: "var(--color-text-primary)",
                 outline: "none"
               }}
@@ -332,72 +352,105 @@ export default function TradeModal({
               type="button"
               onClick={() => handleQuickQuantity(quantity + 1)}
               style={{
-                width: "40px",
-                height: "40px",
-                background: "rgba(255, 255, 255, 0.05)",
+                width: "48px",
+                height: "48px",
+                background: "rgba(0, 0, 0, 0.04)",
                 border: "1px solid var(--border-subtle)",
-                borderRadius: "6px",
+                borderRadius: "8px",
                 color: "var(--color-text-primary)",
-                fontSize: "18px",
-                fontWeight: "700",
-                cursor: "pointer"
+                fontSize: "20px",
+                fontWeight: "800",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0
               }}
             >
               +
             </button>
           </div>
 
-          {/* Quick Quantity Presets */}
+          {/* Quick Stepper Chips (+1, +5, +10, +25, +50, +100) */}
           <div style={{ display: "flex", gap: "6px", marginTop: "8px", flexWrap: "wrap" }}>
-            {[1, 5, 10, 25, 50].map((preset) => (
+            {[1, 5, 10, 25, 50, 100].map((preset) => (
               <button
                 key={preset}
                 type="button"
                 onClick={() => handleQuickQuantity(preset)}
                 style={{
-                  padding: "4px 8px",
+                  padding: "5px 10px",
                   fontSize: "11px",
-                  borderRadius: "4px",
-                  background: quantity === preset ? "rgba(139, 92, 246, 0.2)" : "rgba(255, 255, 255, 0.04)",
+                  borderRadius: "6px",
+                  background: quantity === preset ? "rgba(79, 70, 229, 0.15)" : "rgba(0, 0, 0, 0.03)",
                   border: quantity === preset ? "1px solid var(--accent-ml)" : "1px solid var(--border-subtle)",
                   color: quantity === preset ? "var(--accent-ml)" : "var(--color-text-secondary)",
-                  cursor: "pointer"
+                  cursor: "pointer",
+                  fontWeight: "700"
                 }}
               >
                 +{preset}
               </button>
             ))}
-            {isBuy && maxBuyShares > 0 && (
+          </div>
+
+          {/* Percentage Allocation Chips (25%, 50%, 75%, Max / All) */}
+          <div style={{ display: "flex", gap: "6px", marginTop: "6px", flexWrap: "wrap" }}>
+            {[0.25, 0.50, 0.75].map((pct) => (
               <button
+                key={pct}
                 type="button"
-                onClick={() => handleQuickQuantity(maxBuyShares)}
+                onClick={() => handlePercentageQuantity(pct)}
                 style={{
-                  padding: "4px 8px",
+                  flex: 1,
+                  minWidth: "60px",
+                  padding: "6px 8px",
                   fontSize: "11px",
-                  borderRadius: "4px",
-                  background: "rgba(16, 185, 129, 0.1)",
-                  border: "1px solid var(--color-buy)",
-                  color: "var(--color-buy)",
+                  borderRadius: "6px",
+                  background: "rgba(0, 0, 0, 0.02)",
+                  border: "1px solid var(--border-subtle)",
+                  color: "var(--color-text-secondary)",
                   cursor: "pointer",
                   fontWeight: "700"
                 }}
               >
+                {pct * 100}%
+              </button>
+            ))}
+            {isBuy ? (
+              <button
+                type="button"
+                onClick={() => handleQuickQuantity(maxBuyShares)}
+                style={{
+                  flex: 1,
+                  minWidth: "70px",
+                  padding: "6px 8px",
+                  fontSize: "11px",
+                  borderRadius: "6px",
+                  background: "rgba(5, 150, 105, 0.08)",
+                  border: "1px solid rgba(5, 150, 105, 0.3)",
+                  color: "var(--color-buy)",
+                  cursor: "pointer",
+                  fontWeight: "800"
+                }}
+              >
                 Max ({maxBuyShares})
               </button>
-            )}
-            {!isBuy && maxSellShares > 0 && (
+            ) : (
               <button
                 type="button"
                 onClick={() => handleQuickQuantity(maxSellShares)}
                 style={{
-                  padding: "4px 8px",
+                  flex: 1,
+                  minWidth: "70px",
+                  padding: "6px 8px",
                   fontSize: "11px",
-                  borderRadius: "4px",
-                  background: "rgba(239, 68, 68, 0.1)",
-                  border: "1px solid var(--color-sell)",
+                  borderRadius: "6px",
+                  background: "rgba(220, 38, 38, 0.08)",
+                  border: "1px solid rgba(220, 38, 38, 0.3)",
                   color: "var(--color-sell)",
                   cursor: "pointer",
-                  fontWeight: "700"
+                  fontWeight: "800"
                 }}
               >
                 All ({maxSellShares})
@@ -406,32 +459,26 @@ export default function TradeModal({
           </div>
         </div>
 
-        {/* Order Breakdown */}
+        {/* Order Value Breakdown */}
         <div style={{
-          padding: "14px",
-          borderRadius: "8px",
-          background: "rgba(0, 0, 0, 0.3)",
+          padding: "12px 14px",
+          borderRadius: "10px",
+          background: "rgba(0, 0, 0, 0.02)",
           border: "1px solid var(--border-subtle)",
           display: "flex",
           flexDirection: "column",
-          gap: "8px",
-          fontSize: "13px"
+          gap: "6px",
+          fontSize: "12px"
         }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--color-text-secondary)" }}>Execution Price:</span>
-            <span style={{ fontWeight: "700", color: "var(--color-text-primary)" }}>
-              ₹{currentPrice.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--color-text-secondary)" }}>Estimated Order Value:</span>
-            <span style={{ fontWeight: "900", fontSize: "16px", color: isBuy ? "var(--color-buy)" : "var(--color-sell)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "4px" }}>
+            <span style={{ color: "var(--color-text-secondary)" }}>Total Order Value:</span>
+            <span style={{ fontWeight: "900", fontSize: "15px", color: isBuy ? "var(--color-buy)" : "var(--color-sell)" }}>
               ₹{totalValue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", borderTop: "1px solid var(--border-subtle)", paddingTop: "6px" }}>
-            <span style={{ color: "var(--color-text-muted)" }}>Projected Cash Balance:</span>
-            <span style={{ color: "var(--color-text-secondary)", fontWeight: "600" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "4px", fontSize: "11px", color: "var(--color-text-muted)" }}>
+            <span>Cash Remaining:</span>
+            <span style={{ color: "var(--color-text-primary)", fontWeight: "600" }}>
               ₹{(isBuy ? Math.max(0, availableCash - totalValue) : availableCash + totalValue).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
             </span>
           </div>
@@ -442,7 +489,7 @@ export default function TradeModal({
           <div style={{
             padding: "8px 12px",
             borderRadius: "6px",
-            background: "rgba(239, 68, 68, 0.15)",
+            background: "rgba(220, 38, 38, 0.1)",
             border: "1px solid var(--color-sell)",
             color: "var(--color-sell)",
             fontSize: "12px",
@@ -456,11 +503,11 @@ export default function TradeModal({
           <div style={{
             padding: "8px 12px",
             borderRadius: "6px",
-            background: "rgba(16, 185, 129, 0.15)",
+            background: "rgba(5, 150, 105, 0.1)",
             border: "1px solid var(--color-buy)",
             color: "var(--color-buy)",
             fontSize: "12px",
-            fontWeight: "600"
+            fontWeight: "700"
           }}>
             ✓ {successMsg}
           </div>
@@ -471,7 +518,7 @@ export default function TradeModal({
           <div style={{
             padding: "10px",
             borderRadius: "8px",
-            background: "rgba(124, 77, 255, 0.1)",
+            background: "rgba(79, 70, 229, 0.08)",
             border: "1px solid var(--accent-ml)",
             fontSize: "12px",
             color: "var(--color-text-primary)",
@@ -481,21 +528,23 @@ export default function TradeModal({
           </div>
         )}
 
-        {/* Action Buttons */}
-        <div style={{ display: "flex", gap: "10px", marginTop: "4px" }}>
+        {/* Action Buttons (Sticky at bottom of modal) */}
+        <div style={{ display: "flex", gap: "10px", marginTop: "4px", flexWrap: "wrap" }}>
           <button
             type="button"
             onClick={onClose}
             disabled={loading}
             style={{
               flex: 1,
+              minWidth: "96px",
               padding: "12px",
-              borderRadius: "8px",
+              borderRadius: "10px",
               background: "transparent",
               border: "1px solid var(--border-subtle)",
               color: "var(--color-text-secondary)",
               fontWeight: "700",
-              cursor: "pointer"
+              cursor: "pointer",
+              minHeight: "48px"
             }}
           >
             Cancel
@@ -506,8 +555,9 @@ export default function TradeModal({
             disabled={loading || (isBuy && !hasSufficientCash) || (!isBuy && !hasSufficientShares)}
             style={{
               flex: 2,
+              minWidth: "160px",
               padding: "12px",
-              borderRadius: "8px",
+              borderRadius: "10px",
               background: isBuy ? "var(--color-buy)" : "var(--color-sell)",
               border: "none",
               color: "#ffffff",
@@ -515,15 +565,19 @@ export default function TradeModal({
               fontSize: "14px",
               cursor: (isBuy && !hasSufficientCash) || (!isBuy && !hasSufficientShares) || loading ? "not-allowed" : "pointer",
               opacity: (isBuy && !hasSufficientCash) || (!isBuy && !hasSufficientShares) ? 0.5 : 1,
-              boxShadow: isBuy ? "0 4px 14px rgba(16, 185, 129, 0.4)" : "0 4px 14px rgba(239, 68, 68, 0.4)",
-              transition: "all 0.2s"
+              boxShadow: isBuy ? "0 4px 14px rgba(5, 150, 105, 0.35)" : "0 4px 14px rgba(220, 38, 38, 0.35)",
+              transition: "all 0.15s ease",
+              minHeight: "48px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "6px"
             }}
           >
-            {loading ? "Simulating Order..." : confirming ? `Confirm ${orderType}` : `Execute ${orderType}`}
+            {loading ? "Simulating Order..." : confirming ? `Confirm ${orderType}` : `Execute ${orderType} ${quantity} ${ticker}`}
           </button>
         </div>
       </div>
     </div>
   );
 }
-

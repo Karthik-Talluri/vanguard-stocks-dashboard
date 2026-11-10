@@ -11,27 +11,46 @@ interface StockChartProps {
 export default function StockChart({ ticker, chartData, interval, onIntervalChange }: StockChartProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
-  // Handle resizing
-  const [dimensions, setDimensions] = useState({ width: 600, height: 480 });
+  // Handle resizing with ResizeObserver on canvas wrapper for exact pixel fit
+  const [dimensions, setDimensions] = useState({ width: 320, height: 280 });
 
   useEffect(() => {
-    if (!containerRef.current) return;
-    
-    const handleResize = () => {
-      if (containerRef.current) {
-        setDimensions({
-          width: containerRef.current.clientWidth,
-          height: 480
-        });
-      }
+    const target = canvasWrapperRef.current || containerRef.current;
+    if (!target) return;
+
+    const updateSize = (measuredWidth?: number) => {
+      const fallbackWidth = target.clientWidth || 320;
+      const w = Math.max(200, Math.floor(measuredWidth ?? fallbackWidth));
+      const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
+      setDimensions({
+        width: w,
+        height: isMobile ? 280 : 420
+      });
     };
-    
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+
+    updateSize();
+
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver((entries) => {
+        if (entries[0]) {
+          updateSize(entries[0].contentRect.width);
+        }
+      });
+      observer.observe(target);
+      window.addEventListener("resize", () => updateSize());
+      return () => {
+        observer.disconnect();
+        window.removeEventListener("resize", () => updateSize());
+      };
+    } else {
+      const onWinResize = () => updateSize();
+      window.addEventListener("resize", onWinResize);
+      return () => window.removeEventListener("resize", onWinResize);
+    }
   }, []);
 
   useEffect(() => {
@@ -57,9 +76,9 @@ export default function StockChart({ ticker, chartData, interval, onIntervalChan
     const colorTextMuted = computedStyles ? computedStyles.getPropertyValue("--color-text-muted").trim() : "#64748b";
     const gridColor = computedStyles ? computedStyles.getPropertyValue("--border-subtle").trim() : "rgba(0, 0, 0, 0.08)";
 
-    // Layout layout parameters
-    const paddingLeft = 15;
-    const paddingRight = 65;
+    // Layout parameters
+    const paddingLeft = width < 400 ? 8 : 15;
+    const paddingRight = width < 400 ? 52 : 65;
     const paddingTop = 20;
     
     // Calculate heights relative to the dynamic height
@@ -377,31 +396,40 @@ export default function StockChart({ ticker, chartData, interval, onIntervalChan
     }
   }, [chartData, dimensions, hoverIndex, interval]);
 
+  const computeHoverIndex = (x: number) => {
+    const viewCount = 65;
+    const paddingLeft = dimensions.width < 400 ? 8 : 15;
+    const paddingRight = dimensions.width < 400 ? 52 : 65;
+    const chartWidth = Math.max(1, dimensions.width - paddingLeft - paddingRight);
+    const visibleData = chartData ? chartData.slice(-viewCount) : [];
+    const n = visibleData.length;
+    if (n <= 1) return 0;
+    const pct = (x - paddingLeft) / chartWidth;
+    return Math.max(0, Math.min(n - 1, Math.round(pct * (n - 1))));
+  };
+
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas || !chartData || chartData.length === 0) return;
-    
+
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    
+
     setMousePos({ x, y });
+    setHoverIndex(computeHoverIndex(x));
+  };
 
-    // Calculate hover index based on visible slice
-    const viewCount = 65;
-    const paddingLeft = 15;
-    const paddingRight = 65;
-    const chartWidth = dimensions.width - paddingLeft - paddingRight;
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas || !chartData || chartData.length === 0 || !e.touches[0]) return;
 
-    const visibleData = chartData ? chartData.slice(-viewCount) : [];
-    const n = visibleData.length;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.touches[0].clientX - rect.left;
+    const y = e.touches[0].clientY - rect.top;
 
-    // Find closest index
-    const pct = (x - paddingLeft) / chartWidth;
-    let idx = Math.round(pct * (n - 1));
-    idx = Math.max(0, Math.min(n - 1, idx));
-    
-    setHoverIndex(idx);
+    setMousePos({ x, y });
+    setHoverIndex(computeHoverIndex(x));
   };
 
   const handleMouseLeave = () => {
@@ -418,16 +446,16 @@ export default function StockChart({ ticker, chartData, interval, onIntervalChan
   const hoveredData = getHoverItem();
 
   return (
-    <div className="glass-panel" ref={containerRef} style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "12px", position: "relative" }}>
+    <div className="glass-panel" ref={containerRef} style={{ padding: "clamp(10px, 3vw, 16px)", display: "flex", flexDirection: "column", gap: "10px", position: "relative" }}>
       {/* Chart Top Menu */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: "10px" }}>
-          <h2 style={{ fontSize: "16px", fontWeight: "700" }}>{ticker} Scorecard Chart</h2>
-          <span style={{ fontSize: "11px", color: "var(--color-text-muted)", textTransform: "uppercase" }}>Overlays: Price EMAs, BB, Volume & Futures OI / PCR</span>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: "4px 10px", flexWrap: "wrap", minWidth: 0 }}>
+          <h2 style={{ fontSize: "clamp(14px, 4vw, 16px)", fontWeight: "700", margin: 0 }}>{ticker} Scorecard Chart</h2>
+          <span style={{ fontSize: "10.5px", color: "var(--color-text-muted)", textTransform: "uppercase" }}>Overlays: Price EMAs, BB, Volume & Futures OI / PCR</span>
         </div>
 
         {/* Interval Selector */}
-        <div style={{ display: "flex", gap: "4px" }}>
+        <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
           {[
             { id: "1d", label: "Daily" },
             { id: "1h", label: "1 Hour" },
@@ -440,9 +468,10 @@ export default function StockChart({ ticker, chartData, interval, onIntervalChan
                 fontSize: "11px",
                 padding: "4px 10px",
                 borderRadius: "4px",
-                background: interval === int.id ? "rgba(255, 255, 255, 0.08)" : "transparent",
-                borderColor: interval === int.id ? "var(--color-text-secondary)" : "transparent",
-                color: interval === int.id ? "#fff" : "var(--color-text-secondary)"
+                background: interval === int.id ? "var(--accent-ml)" : "transparent",
+                borderColor: interval === int.id ? "var(--accent-ml)" : "var(--border-subtle)",
+                color: interval === int.id ? "#ffffff" : "var(--color-text-secondary)",
+                fontWeight: "700"
               }}
             >
               {int.label}
@@ -452,32 +481,37 @@ export default function StockChart({ ticker, chartData, interval, onIntervalChan
       </div>
 
       {/* Chart Canvas */}
-      <div style={{ position: "relative", width: "100%", height: "480px" }}>
+      <div ref={canvasWrapperRef} style={{ position: "relative", width: "100%", minWidth: 0, height: `${dimensions.height}px` }}>
         <canvas
           ref={canvasRef}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
-          style={{ width: "100%", height: "480px", display: "block", cursor: "crosshair" }}
+          onTouchStart={handleTouchMove}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleMouseLeave}
+          style={{ width: "100%", height: `${dimensions.height}px`, display: "block", cursor: "crosshair", touchAction: "none" }}
         />
 
         {/* Hover Price & Derivatives Overlay (Tooltip) */}
         {hoveredData && (
           <div style={{
             position: "absolute",
-            top: "12px",
-            left: "12px",
+            top: "8px",
+            left: "8px",
+            right: "8px",
+            maxWidth: "calc(100% - 16px)",
+            width: "fit-content",
             background: "var(--bg-card)",
             border: "1px solid var(--border-subtle)",
             borderRadius: "6px",
-            padding: "8px 12px",
-            fontSize: "11px",
+            padding: "8px 10px",
+            fontSize: "10.5px",
             display: "grid",
-            gridTemplateColumns: "repeat(4, auto)",
-            gap: "x: 16px, y: 4px",
-            columnGap: "16px",
-            rowGap: "2px",
+            gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))",
+            columnGap: "12px",
+            rowGap: "3px",
             pointerEvents: "none",
-            boxShadow: "0 4px 20px rgba(0,0,0,0.06)"
+            boxShadow: "0 4px 20px rgba(0,0,0,0.08)"
           }}>
             <div>
               <span style={{ color: "var(--color-text-muted)" }}>Date: </span>

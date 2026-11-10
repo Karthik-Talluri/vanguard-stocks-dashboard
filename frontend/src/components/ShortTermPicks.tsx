@@ -83,15 +83,15 @@ export default function ShortTermPicks({ onSelectStock }: ShortTermPicksProps) {
         background: "linear-gradient(135deg, rgba(79, 70, 229, 0.08) 0%, rgba(5, 150, 105, 0.04) 100%)",
         border: "1px solid var(--border-subtle)",
         borderRadius: "12px",
-        padding: "20px",
+        padding: "clamp(12px, 3vw, 20px)",
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
         flexWrap: "wrap",
-        gap: "16px"
+        gap: "12px"
       }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-          <h2 style={{ fontSize: "18px", fontWeight: "900", color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: "8px", margin: 0 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: 0, flex: "1 1 240px" }}>
+          <h2 style={{ fontSize: "clamp(16px, 4.5vw, 18px)", lineHeight: 1.25, fontWeight: "900", color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: "8px", margin: 0 }}>
             ⚡ Short-Term Alpha Workspace
           </h2>
           <p style={{ fontSize: "12px", color: "var(--color-text-secondary)", margin: 0, maxWidth: "700px", lineHeight: "1.5" }}>
@@ -102,6 +102,9 @@ export default function ShortTermPicks({ onSelectStock }: ShortTermPicksProps) {
         {/* Market Cap Segments Switcher */}
         <div style={{
           display: "flex",
+          flexWrap: "wrap",
+          gap: "4px",
+          maxWidth: "100%",
           background: "rgba(0,0,0,0.04)",
           padding: "3px",
           borderRadius: "8px",
@@ -116,10 +119,11 @@ export default function ShortTermPicks({ onSelectStock }: ShortTermPicksProps) {
               key={tab.id}
               onClick={() => handleCapTabChange(tab.id as any)}
               style={{
-                fontSize: "12px",
-                padding: "6px 14px",
+                fontSize: "clamp(11px, 3vw, 12px)",
+                padding: "6px 10px",
                 border: "none",
                 borderRadius: "6px",
+                flex: "1 1 auto",
                 background: activeCapTab === tab.id ? "var(--bg-card)" : "transparent",
                 color: activeCapTab === tab.id ? "var(--color-text-primary)" : "var(--color-text-secondary)",
                 fontWeight: "700",
@@ -142,14 +146,14 @@ export default function ShortTermPicks({ onSelectStock }: ShortTermPicksProps) {
         <div className="responsive-split-grid" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: "20px" }}>
           
           {/* Left Panel: Rankings Table */}
-          <div className="glass-panel" style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
-            <h3 style={{ fontSize: "14px", fontWeight: "800", color: "var(--color-text-primary)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div className="glass-panel" style={{ padding: "clamp(14px, 3.5vw, 20px)", display: "flex", flexDirection: "column", gap: "16px" }}>
+            <h3 style={{ fontSize: "14px", fontWeight: "800", color: "var(--color-text-primary)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
               <span>🚀 Ranked Opportunities ({activeCapTab === "large_cap" ? "Large Cap" : activeCapTab === "mid_cap" ? "Mid Cap" : "Small Cap"})</span>
               <span style={{ fontSize: "11px", color: "var(--color-text-muted)", fontWeight: "500" }}>Sorted by Alpha Conviction</span>
             </h3>
             
             {/* Desktop Table View */}
-            <div className="table-desktop-view" style={{ overflowX: "auto" }}>
+            <div className="table-desktop-view table-responsive-wrapper">
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--border-subtle)", textAlign: "left" }}>
@@ -258,11 +262,11 @@ export default function ShortTermPicks({ onSelectStock }: ShortTermPicksProps) {
                     gap: "8px"
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div>
-                      <span style={{ fontWeight: "800", color: "var(--color-text-muted)", marginRight: "6px" }}>#{index + 1}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
+                    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px", minWidth: 0 }}>
+                      <span style={{ fontWeight: "800", color: "var(--color-text-muted)" }}>#{index + 1}</span>
                       <span style={{ fontWeight: "800", color: "var(--color-text-primary)", fontSize: "14px" }}>{item.ticker}</span>
-                      <span style={{ fontSize: "10px", color: "var(--color-text-muted)", marginLeft: "6px" }}>({item.sector})</span>
+                      <span style={{ fontSize: "10px", color: "var(--color-text-muted)" }}>({item.sector})</span>
                     </div>
                     <span style={{
                       background: `rgba(79, 70, 229, 0.08)`,
@@ -276,10 +280,10 @@ export default function ShortTermPicks({ onSelectStock }: ShortTermPicksProps) {
                     </span>
                   </div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px", textAlign: "center", background: "rgba(0,0,0,0.01)", padding: "6px", borderRadius: "6px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "6px", textAlign: "center", background: "rgba(0,0,0,0.01)", padding: "6px", borderRadius: "6px" }}>
                     <div>
                       <div style={{ fontSize: "8px", color: "var(--color-text-muted)" }}>PRICE</div>
-                      <div style={{ fontSize: "12px", fontWeight: "700", color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>₹{item.price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                      <div style={{ fontSize: "clamp(11px, 3vw, 12px)", fontWeight: "700", color: "var(--color-text-primary)" }}>₹{item.price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: "8px", color: "var(--color-text-muted)" }}>CHANGE</div>
@@ -338,13 +342,13 @@ export default function ShortTermPicks({ onSelectStock }: ShortTermPicksProps) {
 
           {/* Right Panel: Deep-Dive Card */}
           {selectedStock && (
-            <div className="glass-panel glow-purple" style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "20px" }}>
+            <div className="glass-panel glow-purple" style={{ padding: "clamp(14px, 3.5vw, 24px)", display: "flex", flexDirection: "column", gap: "18px" }}>
               
               {/* Card Header */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <h3 style={{ fontSize: "20px", fontWeight: "900", color: "var(--color-text-primary)" }}>{selectedStock.ticker}</h3>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", flexWrap: "wrap", gap: "10px" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    <h3 style={{ fontSize: "20px", fontWeight: "900", color: "var(--color-text-primary)", margin: 0 }}>{selectedStock.ticker}</h3>
                     <span style={{
                       fontSize: "10px",
                       color: "var(--color-text-secondary)",
@@ -355,7 +359,7 @@ export default function ShortTermPicks({ onSelectStock }: ShortTermPicksProps) {
                       background: "rgba(0,0,0,0.02)"
                     }}>{selectedStock.sector}</span>
                   </div>
-                  <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", marginTop: "2px", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", marginTop: "4px", display: "flex", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
                     <span>Current spot: <strong style={{ color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>₹{selectedStock.price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
                     <button
                       onClick={() => {
@@ -399,10 +403,10 @@ export default function ShortTermPicks({ onSelectStock }: ShortTermPicksProps) {
               <hr style={{ border: "none", borderTop: "1px solid var(--border-subtle)" }} />
 
               {/* Guages & Core Target Metrics */}
-              <div className="responsive-split-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: "16px", alignItems: "center" }}>
+              <div className="responsive-split-grid" style={{ gridTemplateColumns: "1fr 1.2fr", gap: "16px", alignItems: "center" }}>
                 
                 {/* Radial Indicator Score */}
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", borderRight: "1px solid var(--border-subtle)", paddingRight: "16px" }}>
+                <div className="alpha-score-divider" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
                   <span style={{ fontSize: "10px", fontWeight: "800", color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Alpha Conviction</span>
                   <div style={{
                     width: "84px",
@@ -463,11 +467,9 @@ export default function ShortTermPicks({ onSelectStock }: ShortTermPicksProps) {
                 border: "1px solid var(--border-subtle)",
                 borderRadius: "8px",
                 padding: "12px 16px",
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
                 textAlign: "center"
               }}>
-                <div style={{ borderRight: "1px solid var(--border-subtle)" }}>
+                <div className="target-box-divider">
                   <div style={{ fontSize: "10px", color: "var(--color-text-secondary)", fontWeight: "700" }}>EXPECTED 1-W MOVE</div>
                   <div style={{ fontSize: "16px", fontWeight: "900", color: "#059669", marginTop: "2px" }}>{selectedStock.expected_move}</div>
                 </div>

@@ -41,9 +41,9 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
       {/* Header Summary Panel */}
-      <div className="glass-panel" style={{ padding: "20px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px" }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: "20px", fontWeight: "800", color: "var(--color-text-primary)" }}>
+      <div className="glass-panel" style={{ padding: "clamp(12px, 3vw, 20px)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
+        <div style={{ minWidth: 0, flex: "1 1 240px" }}>
+          <h2 style={{ margin: 0, fontSize: "clamp(16px, 4.5vw, 20px)", lineHeight: 1.25, fontWeight: "800", color: "var(--color-text-primary)" }}>
             ⚡ Real-Time Futures Income Opportunities
           </h2>
           <p style={{ margin: "4px 0 0 0", fontSize: "12px", color: "var(--color-text-secondary)" }}>
@@ -51,20 +51,22 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", maxWidth: "100%", minWidth: 0 }}>
           <span style={{ fontSize: "11px", color: "var(--color-text-muted)", fontWeight: "700", textTransform: "uppercase" }}>Filter Sector:</span>
           <select
             value={filterSector}
             onChange={(e) => setFilterSector(e.target.value)}
             style={{
-              padding: "6px 12px",
+              padding: "6px 10px",
               background: "var(--bg-card)",
               border: "1px solid var(--border-subtle)",
               borderRadius: "6px",
               fontSize: "12px",
               fontWeight: "600",
               cursor: "pointer",
-              outline: "none"
+              outline: "none",
+              maxWidth: "100%",
+              minWidth: 0
             }}
           >
             {sectors.map(s => (
@@ -99,7 +101,7 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
           Running 6-agent scoring matrix across Nifty 50 derivatives universe...
         </div>
       ) : error ? (
-        <div className="glass-panel" style={{ padding: "20px", color: "var(--color-error)", textAlign: "center", fontWeight: "600" }}>
+        <div className="glass-panel" style={{ padding: "20px", color: "var(--color-sell)", textAlign: "center", fontWeight: "600" }}>
           ⚠️ {error}
         </div>
       ) : (
@@ -222,11 +224,11 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
                   key={opp.ticker} 
                   className="glass-panel" 
                   onClick={() => handleRowClick(opp.ticker)}
-                  style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "12px", cursor: "pointer" }}
+                  style={{ padding: "clamp(12px, 3vw, 16px)", display: "flex", flexDirection: "column", gap: "10px", cursor: "pointer" }}
                 >
                   {/* Top Row: Rank, Ticker & Sector */}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", minWidth: 0 }}>
                       <span style={{ fontWeight: "800", color: "var(--color-text-muted)" }}>#{idx + 1}</span>
                       <span style={{ fontWeight: "900", color: "var(--color-text-primary)", fontSize: "15px" }}>{opp.ticker}</span>
                       <span style={{ fontSize: "11px", color: "var(--color-text-muted)", background: "rgba(0,0,0,0.04)", padding: "2px 6px", borderRadius: "4px" }}>{opp.sector}</span>
@@ -247,30 +249,30 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
                   </div>
 
                   {/* Middle Row: Metrics Grid */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", background: "rgba(0,0,0,0.015)", padding: "10px", borderRadius: "8px", textAlign: "center" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "6px", background: "rgba(0,0,0,0.015)", padding: "8px", borderRadius: "8px", textAlign: "center" }}>
                     <div>
                       <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>POP</div>
-                      <div style={{ fontSize: "13px", fontWeight: "800", color: "#10b981", marginTop: "2px" }}>{opp.pop}%</div>
+                      <div style={{ fontSize: "clamp(11px, 3.2vw, 13px)", fontWeight: "800", color: "#10b981", marginTop: "2px" }}>{opp.pop}%</div>
                     </div>
                     <div>
                       <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>YIELD</div>
-                      <div style={{ fontSize: "13px", fontWeight: "800", color: "var(--color-text-primary)", marginTop: "2px" }}>{opp.expected_yield.toFixed(2)}%</div>
+                      <div style={{ fontSize: "clamp(11px, 3.2vw, 13px)", fontWeight: "800", color: "var(--color-text-primary)", marginTop: "2px" }}>{opp.expected_yield.toFixed(2)}%</div>
                     </div>
                     <div>
                       <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>SPOT PRICE</div>
-                      <div style={{ fontSize: "13px", fontWeight: "800", color: "var(--color-text-primary)", marginTop: "2px" }}>₹{opp.price.toLocaleString("en-IN", { maximumFractionDigits: 1 })}</div>
+                      <div style={{ fontSize: "clamp(11px, 3.2vw, 13px)", fontWeight: "800", color: "var(--color-text-primary)", marginTop: "2px" }}>₹{opp.price.toLocaleString("en-IN", { maximumFractionDigits: 1 })}</div>
                     </div>
                   </div>
 
                   {/* Bottom Row: Strategy Setup & Research Button */}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
-                    <div>
+                    <div style={{ minWidth: 0 }}>
                       {opp.strategy_type === "sell_call" ? (
-                        <span style={{ color: "#ec4899", fontWeight: "700", fontSize: "11px", background: "rgba(236, 72, 153, 0.08)", padding: "2px 6px", borderRadius: "4px" }}>
+                        <span style={{ color: "#ec4899", fontWeight: "700", fontSize: "11px", background: "rgba(236, 72, 153, 0.08)", padding: "2px 6px", borderRadius: "4px", display: "inline-block" }}>
                           SELL {opp.option_contract.split(" ").slice(2).join(" ")} (Short Call)
                         </span>
                       ) : (
-                        <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                        <div style={{ display: "flex", gap: "4px", alignItems: "center", flexWrap: "wrap" }}>
                           <span style={{ color: "#3b82f6", fontWeight: "700", fontSize: "10px", background: "rgba(59, 130, 246, 0.08)", padding: "2px 6px", borderRadius: "4px" }}>
                             BUY FUT
                           </span>

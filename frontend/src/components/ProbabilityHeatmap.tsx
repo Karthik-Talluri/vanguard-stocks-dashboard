@@ -302,20 +302,20 @@ export default function ProbabilityHeatmap({
   const isSearchActive = searchTerm.trim().length > 0;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "16px", width: "100%", animation: "fadeIn 0.3s ease-out" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px", width: "100%", minWidth: 0, animation: "fadeIn 0.3s ease-out" }}>
       
       {/* Treemap Toolbar Controls */}
-      <div className="glass-panel" style={{ padding: "16px", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
+      <div className="glass-panel" style={{ padding: "clamp(10px, 3.5vw, 16px)", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
         
         {/* Left Side Controls */}
-        <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", width: "100%", minWidth: 0 }}>
           
-          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: 0 }}>
             <span style={{ fontSize: "11px", color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: "1px", fontWeight: "600" }}>Sector Filter</span>
             <select 
               value={selectedSector} 
               onChange={(e) => setSelectedSector(e.target.value)}
-              style={{ fontSize: "13px", padding: "6px 12px", background: "var(--bg-card)", borderRadius: "6px" }}
+              style={{ fontSize: "13px", padding: "6px 12px", background: "var(--bg-card)", borderRadius: "6px", maxWidth: "100%" }}
             >
               {sectors.map((sec) => (
                 <option key={sec} value={sec}>{sec}</option>
@@ -323,7 +323,7 @@ export default function ProbabilityHeatmap({
             </select>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: 0 }}>
             <span style={{ fontSize: "11px", color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: "1px", fontWeight: "600" }}>Weight Sizing</span>
             <div style={{ display: "flex", background: "var(--bg-button-unselected)", padding: "3px", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
               <button 
@@ -359,14 +359,14 @@ export default function ProbabilityHeatmap({
             </div>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px", flex: "1 1 130px", minWidth: 0 }}>
             <span style={{ fontSize: "11px", color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: "1px", fontWeight: "600" }}>Search Stocks</span>
             <input 
               type="text" 
               placeholder="e.g. RELIANCE, TCS..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              style={{ fontSize: "13px", padding: "6px 12px", width: "160px" }}
+              style={{ fontSize: "13px", padding: "6px 12px", width: "100%", maxWidth: "170px", minWidth: 0 }}
             />
           </div>
 
@@ -393,11 +393,11 @@ export default function ProbabilityHeatmap({
         </div>
 
         {/* Right Side Colors Legend */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "flex-end" }}>
+        <div className="heatmap-legend">
           <span style={{ fontSize: "11px", color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: "1px", fontWeight: "600" }}>1-Week Prob to Go Up</span>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
             <span style={{ fontSize: "10px", color: "var(--color-sell)", fontWeight: "700" }}>Low (&lt;22%)</span>
-            <div style={{ display: "flex", height: "12px", width: "160px", borderRadius: "3px", background: "linear-gradient(90deg, #dc2626 0%, #991b1b 20%, #2d3748 50%, #047857 80%, #10b981 100%)", border: "1px solid var(--border-subtle)" }}></div>
+            <div style={{ display: "flex", height: "12px", width: "clamp(90px, 28vw, 160px)", borderRadius: "3px", background: "linear-gradient(90deg, #dc2626 0%, #991b1b 20%, #2d3748 50%, #047857 80%, #10b981 100%)", border: "1px solid var(--border-subtle)" }}></div>
             <span style={{ fontSize: "10px", color: "var(--color-buy)", fontWeight: "700" }}>High (&gt;45%)</span>
           </div>
         </div>
@@ -407,16 +407,11 @@ export default function ProbabilityHeatmap({
       {/* Main Treemap Canvas */}
       <div 
         ref={containerRef}
+        className="treemap-canvas-container"
         style={{
-          width: "100%",
-          height: "600px",
-          position: "relative",
           background: themeStyles.bg,
           border: `1px solid ${themeStyles.border}`,
-          borderRadius: "12px",
-          overflow: "hidden",
-          boxShadow: isDarkTheme ? "0 8px 32px rgba(0,0,0,0.3)" : "0 4px 20px rgba(0,0,0,0.04)",
-          transition: "background-color 0.3s, border-color 0.3s"
+          boxShadow: isDarkTheme ? "0 8px 32px rgba(0,0,0,0.3)" : "0 4px 20px rgba(0,0,0,0.04)"
         }}
       >
         {treemapLayout.length === 0 ? (
@@ -559,7 +554,7 @@ export default function ProbabilityHeatmap({
         <div
           style={{
             position: "fixed",
-            left: `${tooltipPos.x}px`,
+            left: `${Math.max(12, Math.min(tooltipPos.x, (typeof window !== "undefined" ? window.innerWidth : 1000) - 252))}px`,
             top: `${tooltipPos.y}px`,
             background: isDarkTheme ? "rgba(10, 15, 30, 0.95)" : "rgba(255, 255, 255, 0.96)",
             backdropFilter: "blur(12px)",
@@ -569,6 +564,7 @@ export default function ProbabilityHeatmap({
             boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3)",
             zIndex: 9999,
             width: "240px",
+            maxWidth: "calc(100vw - 24px)",
             pointerEvents: "none",
             animation: "fadeIn 0.1s ease-out",
             color: isDarkTheme ? "#ffffff" : "var(--color-text-primary)"

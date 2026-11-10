@@ -152,8 +152,8 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
         flexWrap: "wrap",
         gap: "12px"
       }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-          <h2 style={{ fontSize: "20px", fontWeight: "900", color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: "8px", margin: 0 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: 0, flex: "1 1 240px" }}>
+          <h2 style={{ fontSize: "clamp(16px, 4.5vw, 20px)", lineHeight: 1.25, fontWeight: "900", color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: "8px", margin: 0 }}>
             🧠 AI Portfolio Manager & Multi-Bagger Screener
           </h2>
           <p style={{ fontSize: "12px", color: "var(--color-text-secondary)", margin: 0 }}>
@@ -163,6 +163,9 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
 
         <div style={{
           display: "flex",
+          flexWrap: "wrap",
+          gap: "4px",
+          maxWidth: "100%",
           background: "rgba(0,0,0,0.04)",
           padding: "4px",
           borderRadius: "8px",
@@ -172,7 +175,8 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
             onClick={() => setViewMode("portfolio")}
             style={{
               fontSize: "12px",
-              padding: "8px 16px",
+              padding: "7px 12px",
+              flex: "1 1 auto",
               border: "none",
               borderRadius: "6px",
               background: viewMode === "portfolio" ? "var(--bg-card)" : "transparent",
@@ -189,7 +193,8 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
             onClick={() => setViewMode("screener")}
             style={{
               fontSize: "12px",
-              padding: "8px 16px",
+              padding: "7px 12px",
+              flex: "1 1 auto",
               border: "none",
               borderRadius: "6px",
               background: viewMode === "screener" ? "var(--bg-card)" : "transparent",
@@ -212,7 +217,7 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
         <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
           
           {/* User Input & Optimization Panel */}
-          <div className="glass-panel" style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
+          <div className="glass-panel" style={{ padding: "clamp(14px, 3vw, 20px)", display: "flex", flexDirection: "column", gap: "16px" }}>
             <h3 style={{ fontSize: "14px", fontWeight: "900", margin: 0, color: "var(--color-text-primary)" }}>
               ⚙️ Customize Your AI Portfolio Constraints
             </h3>
@@ -221,9 +226,9 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
               display: "flex",
               alignItems: "flex-end",
               flexWrap: "wrap",
-              gap: "20px"
+              gap: "14px"
             }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "6px", flex: "1 1 200px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px", flex: "1 1 200px", minWidth: 0, width: "100%" }}>
                 <label style={{ fontSize: "11px", fontWeight: "700", color: "var(--color-text-secondary)" }}>
                   INVESTMENT AMOUNT
                 </label>
@@ -249,7 +254,7 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
                 </div>
               </div>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: "6px", flex: "1 1 200px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px", flex: "1 1 200px", minWidth: 0, width: "100%" }}>
                 <label style={{ fontSize: "11px", fontWeight: "700", color: "var(--color-text-secondary)" }}>
                   INVESTMENT STYLE
                 </label>
@@ -258,6 +263,8 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
                   onChange={(e) => setSelectedStyle(e.target.value)}
                   style={{
                     width: "100%",
+                    maxWidth: "100%",
+                    minWidth: 0,
                     padding: "10px 12px",
                     background: "rgba(0,0,0,0.02)",
                     border: "1px solid var(--border-subtle)",
@@ -281,7 +288,8 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
               <button
                 type="submit"
                 style={{
-                  padding: "11px 24px",
+                  padding: "11px 20px",
+                  maxWidth: "100%",
                   background: "var(--accent-ml)",
                   color: "#ffffff",
                   border: "none",
@@ -311,8 +319,8 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
             <div className="responsive-split-grid" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: "20px" }}>
               
               {/* Left Column: Optimized Allocations Table */}
-              <div className="glass-panel" style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div className="glass-panel" style={{ padding: "clamp(14px, 3vw, 20px)", display: "flex", flexDirection: "column", gap: "16px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
                   <h3 style={{ fontSize: "14px", fontWeight: "900", margin: 0, color: "var(--color-text-primary)" }}>
                     📊 AI Portfolio Allocation ({portfolioData.portfolio.length} Holdings)
                   </h3>
@@ -322,7 +330,7 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
                 </div>
 
                 {/* Desktop Table View */}
-                <div className="table-desktop-view" style={{ overflowX: "auto" }}>
+                <div className="table-desktop-view table-responsive-wrapper">
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
                     <thead>
                       <tr style={{ borderBottom: "1px solid var(--border-subtle)", textAlign: "left" }}>
@@ -411,11 +419,11 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
                         gap: "8px"
                       }}
                     >
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <div>
-                          <span style={{ fontWeight: "800", color: "var(--color-text-muted)", marginRight: "6px" }}>#{item.rank}</span>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
+                        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px", minWidth: 0 }}>
+                          <span style={{ fontWeight: "800", color: "var(--color-text-muted)" }}>#{item.rank}</span>
                           <span style={{ fontWeight: "800", color: "var(--color-text-primary)", fontSize: "14px" }}>{item.ticker}</span>
-                          <span style={{ fontSize: "10px", color: "var(--color-text-muted)", marginLeft: "6px" }}>({item.sector})</span>
+                          <span style={{ fontSize: "10px", color: "var(--color-text-muted)" }}>({item.sector})</span>
                         </div>
                         <span style={{
                           background: getScoreColor(item.conviction) + "12",
@@ -429,7 +437,7 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
                         </span>
                       </div>
 
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px", textAlign: "center", background: "rgba(0,0,0,0.01)", padding: "6px", borderRadius: "6px" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "6px", textAlign: "center", background: "rgba(0,0,0,0.01)", padding: "6px", borderRadius: "6px" }}>
                         <div>
                           <span style={{ fontSize: "8px", color: "var(--color-text-muted)", display: "block" }}>WEIGHT</span>
                           <span style={{ fontSize: "12px", fontWeight: "800", color: "var(--accent-ml)" }}>{item.weight}%</span>
@@ -527,8 +535,8 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
               <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
                 
                 {/* 1. Weekly Performance Report */}
-                <div className="glass-panel glow-purple" style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "14px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div className="glass-panel glow-purple" style={{ padding: "clamp(14px, 3vw, 20px)", display: "flex", flexDirection: "column", gap: "14px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
                     <h3 style={{ fontSize: "13px", fontWeight: "900", margin: 0, color: "var(--color-text-primary)", textTransform: "uppercase" }}>
                       📈 Weekly Portfolio Report
                     </h3>
@@ -570,7 +578,7 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
                       HOLDINGS MODIFICATIONS THIS WEEK
                     </span>
                     
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", fontSize: "10px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "6px", fontSize: "10px" }}>
                       {portfolioData.weekly_report.changes.map((chg, i) => {
                         const isPos = chg.type === "Added" || chg.type === "Increased";
                         const isNeg = chg.type === "Removed" || chg.type === "Reduced";
@@ -594,8 +602,8 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
                 </div>
 
                 {/* 2. Rebalancing Ledger */}
-                <div className="glass-panel" style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "14px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div className="glass-panel" style={{ padding: "clamp(14px, 3vw, 20px)", display: "flex", flexDirection: "column", gap: "14px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
                     <h3 style={{ fontSize: "13px", fontWeight: "900", margin: 0, color: "var(--color-text-primary)", textTransform: "uppercase" }}>
                       🔄 Rebalancing Suggestions
                     </h3>
@@ -618,7 +626,7 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
                             background: "rgba(0,0,0,0.01)"
                           }}
                         >
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                               <span style={{
                                 background: colors.bg,
@@ -700,15 +708,15 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
             background: "linear-gradient(135deg, rgba(236, 72, 153, 0.08) 0%, rgba(79, 70, 229, 0.04) 100%)",
             border: "1px solid var(--border-subtle)",
             borderRadius: "12px",
-            padding: "20px",
+            padding: "clamp(12px, 3vw, 20px)",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
             flexWrap: "wrap",
-            gap: "16px"
+            gap: "12px"
           }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-              <h2 style={{ fontSize: "18px", fontWeight: "900", color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: "8px", margin: 0 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: 0, flex: "1 1 240px" }}>
+              <h2 style={{ fontSize: "clamp(16px, 4.5vw, 18px)", lineHeight: 1.25, fontWeight: "900", color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: "8px", margin: 0 }}>
                 🚀 Nifty 250 Leaderboard Screen
               </h2>
               <p style={{ fontSize: "12px", color: "var(--color-text-secondary)", margin: 0, maxWidth: "700px", lineHeight: "1.5" }}>
@@ -719,6 +727,9 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
             {screenerData && (
               <div style={{
                 display: "flex",
+                flexWrap: "wrap",
+                gap: "4px",
+                maxWidth: "100%",
                 background: "rgba(0,0,0,0.04)",
                 padding: "3px",
                 borderRadius: "8px",
@@ -734,8 +745,9 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
                     key={tab.id}
                     onClick={() => handleCapTabChange(tab.id as any)}
                     style={{
-                      fontSize: "12px",
-                      padding: "6px 14px",
+                      fontSize: "clamp(11px, 3vw, 12px)",
+                      padding: "6px 10px",
+                      flex: "1 1 auto",
                       border: "none",
                       borderRadius: "6px",
                       background: activeCapTab === tab.id ? "var(--bg-card)" : "transparent",
@@ -770,14 +782,14 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
             <div className="responsive-split-grid" style={{ display: "grid", gridTemplateColumns: "1.3fr 1.1fr", gap: "20px" }}>
               
               {/* Left Panel: Rankings Table */}
-              <div className="glass-panel" style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
-                <h3 style={{ fontSize: "14px", fontWeight: "800", color: "var(--color-text-primary)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div className="glass-panel" style={{ padding: "clamp(14px, 3vw, 20px)", display: "flex", flexDirection: "column", gap: "16px" }}>
+                <h3 style={{ fontSize: "14px", fontWeight: "800", color: "var(--color-text-primary)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
                   <span>🏆 Leaderboard Rankings</span>
-                  <span style={{ fontSize: "11px", color: "var(--color-text-muted)", fontWeight: "500", marginLeft: "auto" }}>Sorted by MBX Score</span>
+                  <span style={{ fontSize: "11px", color: "var(--color-text-muted)", fontWeight: "500" }}>Sorted by MBX Score</span>
                 </h3>
                 
                 {/* Desktop Table View */}
-                <div className="table-desktop-view" style={{ overflowX: "auto", maxHeight: "680px" }}>
+                <div className="table-desktop-view table-responsive-wrapper" style={{ maxHeight: "680px" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
                     <thead>
                       <tr style={{ borderBottom: "1px solid var(--border-subtle)", textAlign: "left" }}>
@@ -888,11 +900,11 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
                         gap: "8px"
                       }}
                     >
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <div>
-                          <span style={{ fontWeight: "800", color: "var(--color-text-muted)", marginRight: "6px" }}>#{index + 1}</span>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
+                        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px", minWidth: 0 }}>
+                          <span style={{ fontWeight: "800", color: "var(--color-text-muted)" }}>#{index + 1}</span>
                           <span style={{ fontWeight: "800", color: "var(--color-text-primary)", fontSize: "14px" }}>{item.ticker}</span>
-                          <span style={{ fontSize: "10px", color: "var(--color-text-muted)", marginLeft: "6px" }}>({item.sector})</span>
+                          <span style={{ fontSize: "10px", color: "var(--color-text-muted)" }}>({item.sector})</span>
                         </div>
                         <span style={{
                           background: `rgba(236, 72, 153, 0.08)`,
@@ -906,10 +918,10 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
                         </span>
                       </div>
 
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "6px", textAlign: "center", background: "rgba(0,0,0,0.01)", padding: "6px", borderRadius: "6px" }}>
+                      <div className="four-to-two-grid" style={{ textAlign: "center", background: "rgba(0,0,0,0.01)", padding: "8px", borderRadius: "6px" }}>
                         <div>
                           <span style={{ fontSize: "8px", color: "var(--color-text-muted)", display: "block" }}>PRICE</span>
-                          <span style={{ fontSize: "11px", fontWeight: "700", whiteSpace: "nowrap" }}>₹{item.price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ fontSize: "11.5px", fontWeight: "700" }}>₹{item.price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                         </div>
                         <div>
                           <span style={{ fontSize: "8px", color: "var(--color-text-muted)", display: "block" }}>CAP</span>
@@ -972,13 +984,13 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
 
               {/* Right Panel: Deep-Dive Card */}
               {selectedStock && (
-                <div className="glass-panel glow-purple" style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "20px" }}>
+                <div className="glass-panel glow-purple" style={{ padding: "clamp(14px, 3.5vw, 24px)", display: "flex", flexDirection: "column", gap: "18px" }}>
                   
                   {/* Card Header */}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <h3 style={{ fontSize: "20px", fontWeight: "900", color: "var(--color-text-primary)" }}>{selectedStock.ticker || ""}</h3>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", flexWrap: "wrap", gap: "10px" }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                        <h3 style={{ fontSize: "20px", fontWeight: "900", color: "var(--color-text-primary)", margin: 0 }}>{selectedStock.ticker || ""}</h3>
                         <span style={{
                           fontSize: "10px",
                           color: "var(--color-text-secondary)",
@@ -988,7 +1000,7 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
                           fontWeight: "700"
                         }}>{selectedStock.sector || ""}</span>
                       </div>
-                      <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", marginTop: "2px", display: "flex", alignItems: "center", gap: "8px" }}>
+                      <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", marginTop: "4px", display: "flex", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
                         <span>Current Spot: <strong style={{ color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>₹{(selectedStock.price || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
                         <button
                           onClick={() => {
@@ -1101,7 +1113,7 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
                     flexDirection: "column",
                     gap: "6px"
                   }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "4px" }}>
                       <span style={{ fontSize: "10px", fontWeight: "800", color: "#10b981", textTransform: "uppercase" }}>⚡ Key Catalyst Action</span>
                       <span style={{ fontSize: "11px", fontWeight: "900", color: "#10b981" }}>Catalyst Score: {selectedStock.catalyst_score || 0}/30</span>
                     </div>
@@ -1160,11 +1172,9 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
                     border: "1px solid var(--border-subtle)",
                     borderRadius: "8px",
                     padding: "12px 16px",
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
                     textAlign: "center"
                   }}>
-                    <div style={{ borderRight: "1px solid var(--border-subtle)" }}>
+                    <div className="target-box-divider">
                       <div style={{ fontSize: "10px", color: "var(--color-text-secondary)", fontWeight: "700" }}>3M TARGET (+{selectedStock.expected_3m_return || 0}%)</div>
                       <div style={{ fontSize: "16px", fontWeight: "900", color: "#059669", marginTop: "2px" }}>₹{(selectedStock.target_3m || 0).toLocaleString("en-IN")}</div>
                     </div>

@@ -5,19 +5,29 @@ interface DashboardHeaderProps {
   status: MarketStatus | null;
   onRefresh: () => void;
   error?: string | null;
+  onOpenProfile?: () => void;
+  activeUserName?: string;
 }
 
-export default function DashboardHeader({ status, onRefresh, error }: DashboardHeaderProps) {
+export default function DashboardHeader({
+  status,
+  onRefresh,
+  error,
+  onOpenProfile,
+  activeUserName
+}: DashboardHeaderProps) {
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
   if (error && !status) {
     return (
-      <header className="glass-panel" style={{ padding: "16px", marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1 style={{ fontSize: "24px", color: "var(--color-text-primary)", fontWeight: "800" }}>Personalised Recommendations</h1>
-        <div style={{ color: "var(--color-sell)", fontSize: "12px", display: "flex", alignItems: "center", gap: "8px" }}>
-          <span>⚠️ {error}</span>
-          <button onClick={onRefresh} style={{ background: "none", border: "1px solid var(--border-subtle)", padding: "4px 8px", borderRadius: "4px", color: "var(--color-text-primary)", cursor: "pointer" }}>Retry</button>
+      <header className="glass-panel dashboard-header-container" style={{ marginBottom: "10px" }}>
+        <div className="header-top-row">
+          <h1 className="header-brand-title">Personalised Recommendations</h1>
+          <div style={{ color: "var(--color-sell)", fontSize: "12px", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", maxWidth: "100%" }}>
+            <span style={{ overflowWrap: "anywhere" }}>⚠️ {error}</span>
+            <button onClick={onRefresh} style={{ background: "none", border: "1px solid var(--border-subtle)", padding: "5px 10px", borderRadius: "6px", color: "var(--color-text-primary)", cursor: "pointer", fontSize: "12px" }}>Retry</button>
+          </div>
         </div>
       </header>
     );
@@ -25,9 +35,11 @@ export default function DashboardHeader({ status, onRefresh, error }: DashboardH
 
   if (!status) {
     return (
-      <header className="glass-panel" style={{ padding: "16px", marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1 style={{ fontSize: "24px", color: "var(--color-text-primary)", fontWeight: "800" }}>Personalised Recommendations</h1>
-        <div style={{ color: "var(--color-text-muted)" }}>Loading market feed...</div>
+      <header className="glass-panel dashboard-header-container" style={{ marginBottom: "10px" }}>
+        <div className="header-top-row">
+          <h1 className="header-brand-title">Personalised Recommendations</h1>
+          <div style={{ color: "var(--color-text-muted)", fontSize: "12px" }}>Loading real-time market feed...</div>
+        </div>
       </header>
     );
   }
@@ -81,34 +93,83 @@ export default function DashboardHeader({ status, onRefresh, error }: DashboardH
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   };
 
+  const niftyIsPositive = status.nifty_change >= 0;
+  const bankNiftyIsPositive = (status.bank_nifty_change ?? 0) >= 0;
+
   return (
-    <header className="glass-panel dashboard-header-container" style={{ marginBottom: "20px" }}>
+    <header className="glass-panel dashboard-header-container" style={{ marginBottom: "6px" }}>
+      {/* Top Bar: Brand, Status Badge, Regime Badge, Sync Button, User Profile & Override */}
       <div className="header-top-row">
-        {/* Brand logo */}
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <div style={{ width: "12px", height: "12px", borderRadius: "50%", background: "var(--accent-ml)", boxShadow: "0 0 10px var(--accent-ml)" }}></div>
-            <h1 style={{ fontSize: "22px", letterSpacing: "1px", fontFamily: "var(--font-display)", fontWeight: "800", background: "linear-gradient(90deg, var(--color-text-primary), var(--accent-ml))", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Personalised Recommendations</h1>
-          </div>
-          <div style={{ fontSize: "11px", color: "var(--color-text-muted)", marginTop: "2px", textTransform: "uppercase", letterSpacing: "2px" }}>
-            Hedge-Fund Scoring Consensus • <span style={{ color: "var(--color-buy)" }}>● Live Auto-Sync (1h / 30s ticks)</span>
+        {/* Brand logo & Tagline */}
+        <div className="header-brand-wrap">
+          <div style={{ width: "12px", height: "12px", borderRadius: "50%", background: "var(--accent-ml)", boxShadow: "0 0 10px var(--accent-ml)", flexShrink: 0 }}></div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+              <h1 className="header-brand-title">
+                Personalised Recommendations
+              </h1>
+              <span
+                className="sm-up-inline-block"
+                style={{
+                  fontSize: "9px",
+                  fontWeight: "800",
+                  padding: "2px 6px",
+                  borderRadius: "4px",
+                  background: "rgba(79, 70, 229, 0.1)",
+                  color: "var(--accent-ml)",
+                  border: "1px solid rgba(79, 70, 229, 0.25)"
+                }}
+              >
+                PRO
+              </span>
+            </div>
+            <div className="header-brand-subtitle">
+              Hedge-Fund Scoring Consensus • <span style={{ color: "var(--color-buy)", fontWeight: "700" }}>● Live Auto-Sync</span>
+            </div>
           </div>
         </div>
 
-        {/* Regime Status and Simulation Controls */}
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-          {/* Market Session Status Badge */}
-          <div className="glass-panel" style={{ padding: "6px 12px", border: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
-            <div style={{ fontSize: "9px", color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: "1px", fontWeight: "600" }}>Market Status</div>
-            <div style={{ fontSize: "12px", fontWeight: "800", color: status.is_market_open ? "var(--color-buy)" : "var(--color-text-muted)", display: "flex", alignItems: "center", gap: "6px" }}>
-              <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: status.is_market_open ? "var(--color-buy)" : "#94a3b8" }}></span>
-              {status.market_session_message || (status.is_market_open ? "LIVE MARKET" : "MARKET CLOSED")}
-            </div>
+        {/* Action Controls & Badges */}
+        <div className="header-controls-row">
+          {/* Market Status Pill */}
+          <div
+            style={{
+              padding: "5px 10px",
+              borderRadius: "20px",
+              background: status.is_market_open ? "rgba(5, 150, 105, 0.1)" : "rgba(100, 116, 139, 0.1)",
+              border: `1px solid ${status.is_market_open ? "rgba(5, 150, 105, 0.25)" : "rgba(100, 116, 139, 0.2)"}`,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "5px",
+              fontSize: "11px",
+              fontWeight: "800",
+              color: status.is_market_open ? "var(--color-buy)" : "var(--color-text-muted)",
+              maxWidth: "100%"
+            }}
+          >
+            <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: status.is_market_open ? "var(--color-buy)" : "#94a3b8", flexShrink: 0 }}></span>
+            <span>{status.is_market_open ? "NSE LIVE" : "CLOSED"}</span>
           </div>
-          {/* Regime indicator badge */}
-          <div className={`glass-panel ${regimeClass}`} style={{ padding: "6px 12px", border: "1px solid transparent", display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
-            <div style={{ fontSize: "9px", color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: "1px", fontWeight: "600" }}>Market Regime</div>
-            <div style={{ fontSize: "14px", fontWeight: "800", color: regimeColor }}>{status.regime}</div>
+
+          {/* Regime Badge */}
+          <div
+            className={regimeClass}
+            style={{
+              padding: "5px 10px",
+              borderRadius: "20px",
+              background: "rgba(0,0,0,0.02)",
+              border: "1px solid var(--border-subtle)",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "4px",
+              fontSize: "11px",
+              fontWeight: "800",
+              color: regimeColor,
+              maxWidth: "100%"
+            }}
+          >
+            <span style={{ fontSize: "9px", color: "var(--color-text-muted)" }}>REGIME:</span>
+            <span>{status.regime}</span>
           </div>
 
           {/* Sync Live Button */}
@@ -116,111 +177,212 @@ export default function DashboardHeader({ status, onRefresh, error }: DashboardH
             onClick={handleSyncLive}
             disabled={syncing}
             style={{
-              display: "flex",
+              display: "inline-flex",
               alignItems: "center",
-              gap: "6px",
-              fontSize: "12px",
-              fontWeight: "600",
-              padding: "7px 12px",
-              background: syncing ? "rgba(0, 230, 118, 0.2)" : "rgba(0, 230, 118, 0.1)",
+              gap: "5px",
+              fontSize: "11px",
+              fontWeight: "700",
+              padding: "6px 10px",
+              background: syncing ? "rgba(5, 150, 105, 0.18)" : "rgba(5, 150, 105, 0.08)",
               color: "var(--color-buy)",
-              border: "1px solid rgba(0, 230, 118, 0.3)",
-              borderRadius: "6px",
+              border: "1px solid rgba(5, 150, 105, 0.3)",
+              borderRadius: "8px",
               cursor: syncing ? "wait" : "pointer",
-              transition: "all 0.2s ease"
+              transition: "all 0.15s ease"
             }}
-            title="Fetch real-time live quotes from Yahoo Finance immediately"
+            title="Fetch real-time live quotes immediately"
           >
-            <span style={{ display: "inline-block" }}>🔄</span>
-            {syncing ? "Syncing..." : "Sync Live Data"}
+            <span style={{ display: "inline-block", transform: syncing ? "rotate(180deg)" : "none", transition: "transform 0.5s ease" }}>🔄</span>
+            <span className="xs-up-inline">{syncing ? "Syncing..." : "Sync Live"}</span>
           </button>
 
-          {/* Override controls */}
-          <div style={{ display: "flex", gap: "8px" }}>
-            <select 
-              onChange={(e) => handleSimulate(e.target.value)}
-              disabled={loading}
-              defaultValue=""
-              style={{ 
-                fontSize: "12px", 
-                padding: "6px 10px", 
-                background: "var(--bg-card)", 
-                color: "var(--color-text-primary)",
-                border: "1px solid var(--border-subtle)", 
-                borderRadius: "6px",
+          {/* User Profile Pill */}
+          {activeUserName && onOpenProfile && (
+            <button
+              onClick={onOpenProfile}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                padding: "5px 10px",
+                borderRadius: "20px",
+                background: "rgba(79, 70, 229, 0.1)",
+                border: "1px solid rgba(79, 70, 229, 0.3)",
+                color: "var(--accent-ml)",
+                fontSize: "11px",
+                fontWeight: "800",
                 cursor: "pointer",
                 outline: "none"
               }}
+              title="Open Trader Profile & User Switcher"
             >
-              <option value="" disabled style={{ color: "var(--color-text-muted)" }}>🔧 Select Regime Simulation</option>
-              <option value="NORMAL" style={{ color: "var(--color-text-primary)" }}>🟢 Standard Sideways/Bull</option>
-              <option value="BEAR" style={{ color: "var(--color-text-primary)" }}>🔴 Bear Market Crash (High VIX / NASDAQ drop)</option>
-              <option value="HIGH_VOLATILITY" style={{ color: "var(--color-text-primary)" }}>⚠️ High Volatility Spike (VIX &gt; 28)</option>
-            </select>
-          </div>
+              <span>👤</span>
+              <span>{activeUserName}</span>
+            </button>
+          )}
+
+          {/* Regime Simulation Selector */}
+          <select
+            onChange={(e) => handleSimulate(e.target.value)}
+            disabled={loading}
+            defaultValue=""
+            style={{
+              fontSize: "11px",
+              padding: "5px 8px",
+              background: "var(--bg-card)",
+              color: "var(--color-text-primary)",
+              border: "1px solid var(--border-subtle)",
+              borderRadius: "6px",
+              cursor: "pointer",
+              outline: "none",
+              maxWidth: "100%",
+              minWidth: 0
+            }}
+          >
+            <option value="" disabled style={{ color: "var(--color-text-muted)" }}>🔧 Regime Simulation</option>
+            <option value="NORMAL">🟢 Standard Sideways/Bull</option>
+            <option value="BEAR">🔴 Bear Crash</option>
+            <option value="HIGH_VOLATILITY">⚠️ High Volatility (VIX &gt; 28)</option>
+          </select>
         </div>
       </div>
 
-      {/* Ticker stream */}
-      <div className="header-ticker-bar hide-scrollbar">
-        <div>
-          <span style={{ color: "var(--color-text-secondary)" }}>NIFTY 50: </span>
-          <span style={{ fontWeight: "700" }}>{status.nifty_close.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>
-          <span style={{ color: status.nifty_change >= 0 ? "var(--color-buy)" : "var(--color-sell)", marginLeft: "6px", fontWeight: "600" }}>
-            {status.nifty_change_abs !== undefined ? `${status.nifty_change_abs >= 0 ? "+" : ""}${status.nifty_change_abs.toFixed(1)} ` : ""}
-            ({status.nifty_change >= 0 ? "+" : ""}{status.nifty_change.toFixed(2)}%)
+      {/* Responsive Market Statistics: Desktop Inline Strip (>= 768px) -> 2-Column Mobile Grid (< 600px) with Full-Width DAY RANGE Row */}
+      <div className="market-stats-grid">
+        {/* NIFTY 50 */}
+        <div className="market-stat-cell market-stat-primary">
+          <span className="market-stat-label">
+            NIFTY 50<span className="market-stat-colon">:</span>
           </span>
+          <div className="market-stat-value-row">
+            <span className="market-stat-main-num" style={{ fontWeight: "700" }}>
+              {status.nifty_close.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+            </span>
+            <span
+              className="market-stat-delta"
+              style={{ color: niftyIsPositive ? "var(--color-buy)" : "var(--color-sell)", fontWeight: "600" }}
+            >
+              {status.nifty_change_abs !== undefined ? `${status.nifty_change_abs >= 0 ? "+" : ""}${status.nifty_change_abs.toFixed(1)} ` : ""}
+              ({niftyIsPositive ? "+" : ""}{status.nifty_change.toFixed(2)}%)
+            </span>
+          </div>
         </div>
+
+        {/* BANK NIFTY */}
         {status.bank_nifty_close !== undefined && (
-          <div>
-            <span style={{ color: "var(--color-text-secondary)" }}>BANK NIFTY: </span>
-            <span style={{ fontWeight: "700" }}>{status.bank_nifty_close.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>
-            <span style={{ color: (status.bank_nifty_change ?? 0) >= 0 ? "var(--color-buy)" : "var(--color-sell)", marginLeft: "6px", fontWeight: "600" }}>
-              {status.bank_nifty_change_abs !== undefined ? `${status.bank_nifty_change_abs >= 0 ? "+" : ""}${status.bank_nifty_change_abs.toFixed(1)} ` : ""}
-              ({(status.bank_nifty_change ?? 0) >= 0 ? "+" : ""}{(status.bank_nifty_change ?? 0).toFixed(2)}%)
+          <div className="market-stat-cell market-stat-primary">
+            <span className="market-stat-label">
+              BANK NIFTY<span className="market-stat-colon">:</span>
             </span>
+            <div className="market-stat-value-row">
+              <span className="market-stat-main-num" style={{ fontWeight: "700" }}>
+                {status.bank_nifty_close.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+              </span>
+              <span
+                className="market-stat-delta"
+                style={{ color: bankNiftyIsPositive ? "var(--color-buy)" : "var(--color-sell)", fontWeight: "600" }}
+              >
+                {status.bank_nifty_change_abs !== undefined ? `${status.bank_nifty_change_abs >= 0 ? "+" : ""}${status.bank_nifty_change_abs.toFixed(1)} ` : ""}
+                ({bankNiftyIsPositive ? "+" : ""}{(status.bank_nifty_change ?? 0).toFixed(2)}%)
+              </span>
+            </div>
           </div>
         )}
+
+        {/* DAY RANGE (Own Full-Width Row Below 768px / 600px) */}
         {status.nifty_open !== undefined && status.nifty_high !== undefined && status.nifty_low !== undefined && (
-          <div>
-            <span style={{ color: "var(--color-text-secondary)" }}>DAY RANGE: </span>
-            <span style={{ fontSize: "12px", color: "var(--color-text-primary)" }}>
-              O: {status.nifty_open.toLocaleString(undefined, { maximumFractionDigits: 1 })} | H: {status.nifty_high.toLocaleString(undefined, { maximumFractionDigits: 1 })} | L: {status.nifty_low.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+          <div className="market-stat-cell market-stat-dayrange">
+            <span className="market-stat-label">
+              DAY RANGE<span className="market-stat-colon">:</span>
+            </span>
+            <div className="market-stat-dayrange-values">
+              <span><strong>O:</strong> {status.nifty_open.toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
+              <span><strong>H:</strong> {status.nifty_high.toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
+              <span><strong>L:</strong> {status.nifty_low.toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
+            </div>
+          </div>
+        )}
+
+        {/* PREVIOUS CLOSE */}
+        {status.nifty_prev_close !== undefined && (
+          <div className="market-stat-cell">
+            <span className="market-stat-label">
+              PREVIOUS CLOSE<span className="market-stat-colon">:</span>
+            </span>
+            <div className="market-stat-value-row">
+              <span className="market-stat-main-num">
+                {status.nifty_prev_close.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* INDIA VIX */}
+        <div className="market-stat-cell">
+          <span className="market-stat-label">
+            INDIA VIX<span className="market-stat-colon">:</span>
+          </span>
+          <div className="market-stat-value-row">
+            <span
+              className="market-stat-main-num"
+              style={{ color: status.vix > 20 ? "var(--color-sell)" : "var(--color-buy)", fontWeight: "700" }}
+            >
+              {status.vix.toFixed(2)}
             </span>
           </div>
-        )}
-        {status.nifty_prev_close !== undefined && (
-          <div>
-            <span style={{ color: "var(--color-text-secondary)" }}>PREV CLOSE: </span>
-            <span>{status.nifty_prev_close.toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
+        </div>
+
+        {/* NASDAQ */}
+        <div className="market-stat-cell">
+          <span className="market-stat-label">
+            NASDAQ<span className="market-stat-colon">:</span>
+          </span>
+          <div className="market-stat-value-row">
+            <span className="market-stat-main-num">
+              {status.nasdaq.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            </span>
           </div>
-        )}
-        <div>
-          <span style={{ color: "var(--color-text-secondary)" }}>INDIA VIX: </span>
-          <span style={{ color: status.vix > 20 ? "var(--color-sell)" : "var(--color-buy)", fontWeight: "600" }}>{status.vix.toFixed(2)}</span>
         </div>
-        <div>
-          <span style={{ color: "var(--color-text-secondary)" }}>NASDAQ: </span>
-          <span>{status.nasdaq.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+
+        {/* S&P 500 */}
+        <div className="market-stat-cell">
+          <span className="market-stat-label">
+            S&amp;P 500<span className="market-stat-colon">:</span>
+          </span>
+          <div className="market-stat-value-row">
+            <span className="market-stat-main-num">
+              {status.sp500.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            </span>
+          </div>
         </div>
-        <div>
-          <span style={{ color: "var(--color-text-secondary)" }}>S&P 500: </span>
-          <span>{status.sp500.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+
+        {/* DXY */}
+        <div className="market-stat-cell">
+          <span className="market-stat-label">
+            DXY<span className="market-stat-colon">:</span>
+          </span>
+          <div className="market-stat-value-row">
+            <span className="market-stat-main-num">{status.dxy.toFixed(2)}</span>
+          </div>
         </div>
-        <div>
-          <span style={{ color: "var(--color-text-secondary)" }}>DXY: </span>
-          <span>{status.dxy.toFixed(2)}</span>
+
+        {/* US 10Y */}
+        <div className="market-stat-cell">
+          <span className="market-stat-label">
+            US 10Y<span className="market-stat-colon">:</span>
+          </span>
+          <div className="market-stat-value-row">
+            <span className="market-stat-main-num">{status.us10y.toFixed(2)}%</span>
+          </div>
         </div>
-        <div>
-          <span style={{ color: "var(--color-text-secondary)" }}>US 10Y: </span>
-          <span>{status.us10y.toFixed(2)}%</span>
-        </div>
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "10px", fontSize: "11px", color: "var(--color-text-muted)", whiteSpace: "nowrap" }}>
+
+        {/* Timestamp / Source Metadata */}
+        <div className="market-stat-meta">
           {(status.last_updated_formatted || status.last_updated) && (
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
               <span>🕒 Updated: {status.last_updated_formatted || status.last_updated}</span>
               {status.source && (
-                <span style={{ textTransform: "uppercase", fontSize: "10px", padding: "1px 5px", borderRadius: "3px", background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}>
+                <span style={{ textTransform: "uppercase", fontSize: "9.5px", padding: "1px 5px", borderRadius: "3px", background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}>
                   {status.source === "nse_live" ? "NSE Real-Time" : "NSE Official"}
                 </span>
               )}
@@ -230,9 +392,9 @@ export default function DashboardHeader({ status, onRefresh, error }: DashboardH
             </div>
           )}
           {status.last_synced && (
-            <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-              <span>Synced: </span>
-              <span style={{ color: "var(--color-text-primary)" }}>{formatLastSync(status.last_synced)}</span>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+              <span>Synced:</span>
+              <span style={{ color: "var(--color-text-primary)", fontWeight: "600" }}>{formatLastSync(status.last_synced)}</span>
             </div>
           )}
         </div>
