@@ -391,7 +391,7 @@ export default function DashboardHeader({
               )}
             </div>
           )}
-          {status.last_synced && (
+          {typeof status.last_synced === "number" && (
             <div style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
               <span>Synced:</span>
               <span style={{ color: "var(--color-text-primary)", fontWeight: "600" }}>{formatLastSync(status.last_synced)}</span>
