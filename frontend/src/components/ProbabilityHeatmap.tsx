@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { StockOverview } from "../utils/api";
 
 interface ProbabilityHeatmapProps {
@@ -550,7 +551,7 @@ export default function ProbabilityHeatmap({
       </div>
 
       {/* Floating Detailed Hover Tooltip */}
-      {hoveredStock && (
+      {hoveredStock && typeof document !== "undefined" && createPortal(
         <div
           style={{
             position: "fixed",
@@ -619,7 +620,8 @@ export default function ProbabilityHeatmap({
           <div style={{ fontSize: "9px", color: "#818cf8", fontWeight: "700", marginTop: "8px", textAlign: "center", textTransform: "uppercase", letterSpacing: "0.5px" }}>
             ⚡ Click to open AI Research Scorecard
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
     </div>

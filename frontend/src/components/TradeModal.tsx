@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { 
   executePaperOrder, 
   PaperAccount, 
@@ -52,7 +53,7 @@ export default function TradeModal({
     }
   }, [isOpen, initialOrderType, ticker]);
 
-  if (!isOpen) return null;
+  if (!isOpen || typeof document === "undefined") return null;
 
   const totalValue = quantity * (currentPrice || 0);
   const isBuy = orderType === "BUY";
@@ -131,7 +132,7 @@ export default function TradeModal({
     }
   };
 
-  return (
+  return createPortal(
     <div 
       style={{
         position: "fixed",
@@ -578,6 +579,7 @@ export default function TradeModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
