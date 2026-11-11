@@ -30,7 +30,7 @@ import FuturesTradeModal from "../components/FuturesTradeModal";
 import MobileBottomNav, { MobileTab } from "../components/MobileBottomNav";
 import UserProfileView from "../components/UserProfileView";
 import WatchlistView from "../components/WatchlistView";
-import { fetchPaperAccount, PaperAccount, TradingUser, getActiveTradingUser } from "../utils/api";
+import { fetchPaperAccount, PaperAccount, TradingUser, PAPER_TRADING_USERS, getActiveTradingUser } from "../utils/api";
 
 export default function Home() {
   const [stocks, setStocks] = useState<StockOverview[]>([]);
@@ -54,7 +54,9 @@ export default function Home() {
   const [mobileResearchSubTab, setMobileResearchSubTab] = useState<"deepdive" | "heatmap" | "stream">("deepdive");
 
   // Global Paper Trading Modal states (Equity + Futures)
-  const [activePaperUser, setActivePaperUser] = useState<TradingUser>(getActiveTradingUser());
+  // Initialize with static default for deterministic SSR hydration, then sync localStorage user on mount
+  const [activePaperUser, setActivePaperUser] = useState<TradingUser>(PAPER_TRADING_USERS[0]);
+  const [userHydrated, setUserHydrated] = useState(false);
   const [globalTradeModalOpen, setGlobalTradeModalOpen] = useState(false);
   const [modalTradeTicker, setModalTradeTicker] = useState("RELIANCE");
   const [modalTradeType, setModalTradeType] = useState<"BUY" | "SELL">("BUY");
@@ -175,16 +177,31 @@ export default function Home() {
   };
 
   useEffect(() => {
+    const saved = getActiveTradingUser();
+    setActivePaperUser(saved);
+    setUserHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!userHydrated) return;
+    let cancelled = false;
+    fetchPaperAccount(activePaperUser.id)
+      .then((acc) => {
+        if (!cancelled) setPaperAccount(acc);
+      })
+      .catch(console.error);
+    return () => {
+      cancelled = true;
+    };
+  }, [userHydrated, activePaperUser.id]);
+
+  useEffect(() => {
     const handler = (e: any) => {
       if (e.detail) {
         handleInspectStockInResearch(e.detail);
       }
     };
     window.addEventListener("select-stock", handler);
-
-    // Initial load of paper trading account for current active user
-    const currentUid = activePaperUser?.id || getActiveTradingUser().id;
-    fetchPaperAccount(currentUid).then(setPaperAccount).catch(console.error);
 
     // Listen for paper trading triggers from any stock card or table
     const tradeHandler = (e: any) => {
@@ -211,7 +228,6 @@ export default function Home() {
     const userChangeHandler = (e: any) => {
       if (e.detail) {
         setActivePaperUser(e.detail);
-        fetchPaperAccount(e.detail.id).then(setPaperAccount).catch(console.error);
       }
     };
     window.addEventListener("paper-user-changed", userChangeHandler);
@@ -231,7 +247,7 @@ export default function Home() {
       window.removeEventListener("paper-user-changed", userChangeHandler);
       window.removeEventListener("paper-account-updated", accountUpdateHandler);
     };
-  }, [activePaperUser?.id]);
+  }, []);
 
   // Map mobile tab change to active views
   const handleMobileTabChange = (tab: MobileTab) => {

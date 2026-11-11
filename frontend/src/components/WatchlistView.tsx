@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   StockOverview,
   getLocalWatchlistTickers,
@@ -27,15 +27,19 @@ export default function WatchlistView({
   const [syncing, setSyncing] = useState<boolean>(false);
   const [mutating, setMutating] = useState<boolean>(false);
   const [wlError, setWlError] = useState<string | null>(null);
+  const opSeqRef = useRef<number>(0);
 
   useEffect(() => {
     let cancelled = false;
+    const startSeq = opSeqRef.current;
     setSyncing(true);
     setWlError(null);
     setSavedTickers(getLocalWatchlistTickers(userId));
     fetchWatchlist(userId)
       .then((tickers) => {
-        if (!cancelled) setSavedTickers(tickers);
+        if (!cancelled && opSeqRef.current === startSeq) {
+          setSavedTickers(tickers);
+        }
       })
       .catch((err) => {
         if (!cancelled) setWlError(err?.message || "Failed to sync watchlist");
@@ -71,12 +75,15 @@ export default function WatchlistView({
   const handleAddTicker = async (tickerToAdd?: string) => {
     const target = (tickerToAdd || effectiveSelectedToAdd || "").trim().toUpperCase();
     if (!target || savedTickers.includes(target) || mutating) return;
+    const mySeq = ++opSeqRef.current;
     setMutating(true);
     setWlError(null);
     try {
       const updated = await addToWatchlist(userId, target);
-      setSavedTickers(updated);
-      setSelectedToAdd("");
+      if (opSeqRef.current === mySeq) {
+        setSavedTickers(updated);
+        setSelectedToAdd("");
+      }
     } catch (err: unknown) {
       setWlError(err instanceof Error ? err.message : `Failed to add ${target} to watchlist`);
     } finally {
@@ -86,11 +93,14 @@ export default function WatchlistView({
 
   const handleRemoveTicker = async (ticker: string) => {
     if (mutating) return;
+    const mySeq = ++opSeqRef.current;
     setMutating(true);
     setWlError(null);
     try {
       const updated = await removeFromWatchlist(userId, ticker);
-      setSavedTickers(updated);
+      if (opSeqRef.current === mySeq) {
+        setSavedTickers(updated);
+      }
     } catch (err: unknown) {
       setWlError(err instanceof Error ? err.message : `Failed to remove ${ticker} from watchlist`);
     } finally {
@@ -106,7 +116,7 @@ export default function WatchlistView({
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "14px" }} className="animate-fade-in">
+    <div data-testid="watchlist-view" style={{ display: "flex", flexDirection: "column", gap: "14px" }} className="animate-fade-in">
       {/* Header + Add Stock Card */}
       <div
         className="glass-panel"

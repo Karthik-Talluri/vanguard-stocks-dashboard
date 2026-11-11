@@ -953,6 +953,12 @@ export async function syncPaperAccountWithBackend(
   }
   const data = await res.json();
   if (data?.account) {
+    const latestLocal = getLocalPaperAccount(uid);
+    const latestTs = latestLocal?.state_updated_at || "";
+    const serverTs = data.account?.state_updated_at || "";
+    if (!force && latestLocal && latestTs && serverTs && latestTs > serverTs) {
+      return latestLocal;
+    }
     saveLocalPaperAccount(uid, data.account);
     if (Array.isArray(data?.transactions)) {
       saveLocalPaperTransactions(uid, data.transactions);
@@ -1291,10 +1297,14 @@ function isSameList(a: string[], b: string[]): boolean {
 
 export async function fetchWatchlist(userId: string): Promise<string[]> {
   const uid = userId || getPaperUserId();
+  const startLocalUpdatedAt = getLocalWatchlistUpdatedAt(uid);
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), 12000) : null;
   try {
     const res = await fetch(`${getApiBase()}/api/watchlist?user_id=${encodeURIComponent(uid)}`, {
       cache: "no-store",
-      headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+      headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
+      signal: controller?.signal,
     });
     if (!res.ok) throw new Error(`Failed to fetch watchlist (${res.status})`);
     const data = await res.json();
@@ -1306,6 +1316,10 @@ export async function fetchWatchlist(userId: string): Promise<string[]> {
       const isCustomized = window.localStorage.getItem(`${WATCHLIST_CUSTOM_PREFIX}${uid}`) === "1";
       const localTickers = getLocalWatchlistTickers(uid);
       const localUpdatedAt = getLocalWatchlistUpdatedAt(uid);
+      const mutatedWhileFetching = Boolean(localUpdatedAt && localUpdatedAt !== startLocalUpdatedAt);
+      if (mutatedWhileFetching && (!serverUpdatedAt || localUpdatedAt > serverUpdatedAt)) {
+        return localTickers;
+      }
       const clientIsNewer = Boolean(isCustomized && localUpdatedAt && (!serverUpdatedAt || localUpdatedAt > serverUpdatedAt));
       const legacyCold = Boolean(isCustomized && isSameList(serverTickers, DEFAULT_WATCHLIST_TICKERS) && !isSameList(localTickers, DEFAULT_WATCHLIST_TICKERS));
       if (clientIsNewer || legacyCold) {
@@ -1317,6 +1331,8 @@ export async function fetchWatchlist(userId: string): Promise<string[]> {
     return serverTickers;
   } catch {
     return getLocalWatchlistTickers(uid);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -1372,21 +1388,35 @@ export async function syncWatchlistWithBackend(
   clientUpdatedAt?: string
 ): Promise<string[]> {
   const uid = userId || getPaperUserId();
-  const res = await fetch(`${getApiBase()}/api/watchlist/sync`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
-    body: JSON.stringify({
-      user_id: uid,
-      tickers,
-      client_updated_at: clientUpdatedAt || getLocalWatchlistUpdatedAt(uid) || undefined
-    })
-  });
-  if (!res.ok) return tickers;
-  const data = await res.json();
-  const synced: string[] = Array.isArray(data?.tickers) ? data.tickers : tickers;
-  const updatedAt: string = typeof data?.updated_at === "string" ? data.updated_at : (clientUpdatedAt || "");
-  saveLocalWatchlistTickers(uid, synced, true, updatedAt);
-  return synced;
+  const targetUpdatedAt = clientUpdatedAt || getLocalWatchlistUpdatedAt(uid) || "";
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), 12000) : null;
+  try {
+    const res = await fetch(`${getApiBase()}/api/watchlist/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
+      body: JSON.stringify({
+        user_id: uid,
+        tickers,
+        client_updated_at: targetUpdatedAt || undefined
+      }),
+      signal: controller?.signal,
+    });
+    if (!res.ok) return tickers;
+    const data = await res.json();
+    const synced: string[] = Array.isArray(data?.tickers) ? data.tickers : tickers;
+    const updatedAt: string = typeof data?.updated_at === "string" ? data.updated_at : targetUpdatedAt;
+    const latestLocalUpdatedAt = getLocalWatchlistUpdatedAt(uid);
+    if (latestLocalUpdatedAt && updatedAt && latestLocalUpdatedAt > updatedAt) {
+      return getLocalWatchlistTickers(uid);
+    }
+    saveLocalWatchlistTickers(uid, synced, true, updatedAt);
+    return synced;
+  } catch {
+    return getLocalWatchlistTickers(uid);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export async function resetPaperAccount(userId?: string): Promise<{ success: boolean; message: string; account: PaperAccount; transactions?: PaperTransaction[] }> {
