@@ -26,6 +26,7 @@ import ShortTermPicks from "../components/ShortTermPicks";
 import MultiBaggerPicks from "../components/MultiBaggerPicks";
 import PaperTradingDashboard from "../components/PaperTradingDashboard";
 import TradeModal from "../components/TradeModal";
+import FuturesTradeModal from "../components/FuturesTradeModal";
 import MobileBottomNav, { MobileTab } from "../components/MobileBottomNav";
 import UserProfileView from "../components/UserProfileView";
 import WatchlistView from "../components/WatchlistView";
@@ -52,11 +53,15 @@ export default function Home() {
   const [mobileOppSubTab, setMobileOppSubTab] = useState<"futures" | "shortterm" | "multibagger" | "scanners">("futures");
   const [mobileResearchSubTab, setMobileResearchSubTab] = useState<"deepdive" | "heatmap" | "stream">("deepdive");
 
-  // Global Paper Trading Modal states
+  // Global Paper Trading Modal states (Equity + Futures)
   const [activePaperUser, setActivePaperUser] = useState<TradingUser>(getActiveTradingUser());
   const [globalTradeModalOpen, setGlobalTradeModalOpen] = useState(false);
   const [modalTradeTicker, setModalTradeTicker] = useState("RELIANCE");
   const [modalTradeType, setModalTradeType] = useState<"BUY" | "SELL">("BUY");
+  const [globalFuturesModalOpen, setGlobalFuturesModalOpen] = useState(false);
+  const [modalFuturesTicker, setModalFuturesTicker] = useState("HINDALCO");
+  const [modalFuturesSide, setModalFuturesSide] = useState<"BUY" | "SELL">("BUY");
+  const [modalFuturesLots, setModalFuturesLots] = useState<number>(1);
   const [paperAccount, setPaperAccount] = useState<PaperAccount | null>(null);
 
   // WebSocket / streaming states
@@ -191,6 +196,17 @@ export default function Home() {
     };
     window.addEventListener("open-paper-trade", tradeHandler);
 
+    // Listen for Futures paper trading triggers from any stock card, table, or research view
+    const futuresTradeHandler = (e: any) => {
+      if (e.detail?.ticker) {
+        setModalFuturesTicker(e.detail.ticker);
+        setModalFuturesSide(e.detail.side === "SELL" ? "SELL" : "BUY");
+        setModalFuturesLots(Math.max(1, Number(e.detail.lots) || 1));
+        setGlobalFuturesModalOpen(true);
+      }
+    };
+    window.addEventListener("open-futures-trade", futuresTradeHandler);
+
     // Listen for user switches across the dashboard
     const userChangeHandler = (e: any) => {
       if (e.detail) {
@@ -211,10 +227,11 @@ export default function Home() {
     return () => {
       window.removeEventListener("select-stock", handler);
       window.removeEventListener("open-paper-trade", tradeHandler);
+      window.removeEventListener("open-futures-trade", futuresTradeHandler);
       window.removeEventListener("paper-user-changed", userChangeHandler);
       window.removeEventListener("paper-account-updated", accountUpdateHandler);
     };
-  }, [selectedTicker, activePaperUser?.id]);
+  }, [activePaperUser?.id]);
 
   // Map mobile tab change to active views
   const handleMobileTabChange = (tab: MobileTab) => {
@@ -239,6 +256,16 @@ export default function Home() {
     }
   };
 
+  const isExploreSection =
+    activeTab === "opportunities" ||
+    activeTab === "shortterm" ||
+    activeTab === "multibagger" ||
+    activeTab === "scanners";
+  const isResearchSection =
+    activeTab === "research" || activeTab === "heatmap" || activeTab === "stream";
+  const totalActivePositions =
+    (paperAccount?.holdings.length ?? 0) + (paperAccount?.futures_positions?.length ?? 0);
+
   return (
     <div className="page-main-container">
       {/* Top Header */}
@@ -253,52 +280,132 @@ export default function Home() {
         activeUserName={activePaperUser.name}
       />
 
-      {/* Desktop Tab Switcher (Visible >= 768px via CSS) */}
-      <div className="desktop-tab-container tab-container">
+      {/* Desktop Tab Switcher (100% Parity with 5 Mobile Navigation Tabs >= 768px) */}
+      <div className="desktop-tab-container tab-container" role="tablist" aria-label="Desktop Navigation">
         {[
-          { id: "opportunities", label: "🏠 Opportunities" },
-          { id: "shortterm", label: "⚡ Short-Term Alpha" },
-          { id: "multibagger", label: "🚀 Multi-Bagger Picks" },
-          { id: "papertrading", label: "📈 Paper Trading" },
-          { id: "research", label: "🔬 AI Research" },
-          { id: "heatmap", label: "🔮 Probability Treemap" },
-          { id: "stream", label: "📡 Live Console" },
-          { id: "scanners", label: "🔍 Income Scanners" }
+          { id: "opportunities" as MobileTab, label: "⚡ Explore", active: isExploreSection },
+          { id: "watchlist" as MobileTab, label: "🔖 Watchlist", active: activeTab === "watchlist" },
+          {
+            id: "papertrading" as MobileTab,
+            label: "📈 Paper Trade",
+            active: activeTab === "papertrading",
+            badge: totalActivePositions > 0 ? totalActivePositions : undefined,
+          },
+          { id: "research" as MobileTab, label: "🔬 AI Research", active: isResearchSection },
+          { id: "profile" as MobileTab, label: `👤 ${activePaperUser.name}`, active: activeTab === "profile" },
         ].map((tab) => (
           <button
             key={tab.id}
-            onClick={() => {
-              setActiveTab(tab.id as any);
-              if (tab.id === "opportunities") {
-                setMobileTab("opportunities");
-                setMobileOppSubTab("futures");
-              } else if (tab.id === "shortterm" || tab.id === "multibagger" || tab.id === "scanners") {
-                setMobileTab("opportunities");
-                setMobileOppSubTab(tab.id as any);
-              } else if (tab.id === "papertrading") {
-                setMobileTab("papertrading");
-              } else if (tab.id === "research" || tab.id === "heatmap" || tab.id === "stream") {
-                setMobileTab("research");
-                setMobileResearchSubTab(tab.id === "research" ? "deepdive" : (tab.id as any));
-              }
-            }}
+            role="tab"
+            aria-selected={tab.active}
+            onClick={() => handleMobileTabChange(tab.id)}
             style={{
               fontSize: "12.5px",
-              padding: "7px 12px",
-              border: "1px solid " + (activeTab === tab.id ? "var(--accent-ml)" : "var(--border-subtle)"),
+              padding: "7px 14px",
+              border: "1px solid " + (tab.active ? "var(--accent-ml)" : "var(--border-subtle)"),
               borderRadius: "8px",
-              background: activeTab === tab.id ? "var(--accent-ml)" : "var(--bg-card)",
-              color: activeTab === tab.id ? "#ffffff" : "var(--color-text-secondary)",
+              background: tab.active ? "var(--accent-ml)" : "var(--bg-card)",
+              color: tab.active ? "#ffffff" : "var(--color-text-secondary)",
               fontWeight: "700",
               cursor: "pointer",
               transition: "all 0.15s ease",
-              boxShadow: activeTab === tab.id ? "0 4px 12px rgba(79, 70, 229, 0.25)" : "none"
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              boxShadow: tab.active ? "0 4px 12px rgba(79, 70, 229, 0.25)" : "none"
             }}
           >
-            {tab.label}
+            <span>{tab.label}</span>
+            {tab.badge !== undefined && (
+              <span
+                style={{
+                  background: tab.active ? "rgba(255,255,255,0.22)" : "var(--color-buy)",
+                  color: "#ffffff",
+                  fontSize: "10px",
+                  fontWeight: "800",
+                  padding: "1px 6px",
+                  borderRadius: "10px",
+                }}
+              >
+                {tab.badge}
+              </span>
+            )}
           </button>
         ))}
       </div>
+
+      {/* Desktop Sub-Tab Pills for Explore (>= 768px via CSS) */}
+      {isExploreSection && (
+        <div className="desktop-subtabs-bar" aria-label="Explore Sub-Navigation">
+          {[
+            { id: "futures", label: "⚡ Futures Income", target: "opportunities" },
+            { id: "shortterm", label: "⚡ Short-Term Alpha", target: "shortterm" },
+            { id: "multibagger", label: "🚀 Multi-Bagger Picks", target: "multibagger" },
+            { id: "scanners", label: "🔍 Income Scanners", target: "scanners" },
+          ].map((sub) => {
+            const isSubActive = activeTab === sub.target;
+            return (
+              <button
+                key={sub.id}
+                onClick={() => {
+                  setMobileTab("opportunities");
+                  setMobileOppSubTab(sub.id as any);
+                  setActiveTab(sub.target as any);
+                }}
+                style={{
+                  padding: "5px 12px",
+                  borderRadius: "20px",
+                  fontSize: "11.5px",
+                  fontWeight: "700",
+                  whiteSpace: "nowrap",
+                  background: isSubActive ? "rgba(79, 70, 229, 0.12)" : "var(--bg-card)",
+                  color: isSubActive ? "var(--accent-ml)" : "var(--color-text-secondary)",
+                  border: isSubActive ? "1px solid var(--accent-ml)" : "1px solid var(--border-subtle)",
+                  cursor: "pointer",
+                }}
+              >
+                {sub.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Desktop Sub-Tab Pills for AI Research (>= 768px via CSS) */}
+      {isResearchSection && (
+        <div className="desktop-subtabs-bar" aria-label="AI Research Sub-Navigation">
+          {[
+            { id: "deepdive", label: "🔬 Deep Dive & Chart", target: "research" },
+            { id: "heatmap", label: "🔮 Probability Treemap", target: "heatmap" },
+            { id: "stream", label: "📡 Live Console", target: "stream" },
+          ].map((sub) => {
+            const isSubActive = activeTab === sub.target;
+            return (
+              <button
+                key={sub.id}
+                onClick={() => {
+                  setMobileTab("research");
+                  setMobileResearchSubTab(sub.id as any);
+                  setActiveTab(sub.target as any);
+                }}
+                style={{
+                  padding: "5px 12px",
+                  borderRadius: "20px",
+                  fontSize: "11.5px",
+                  fontWeight: "700",
+                  whiteSpace: "nowrap",
+                  background: isSubActive ? "rgba(79, 70, 229, 0.12)" : "var(--bg-card)",
+                  color: isSubActive ? "var(--accent-ml)" : "var(--color-text-secondary)",
+                  border: isSubActive ? "1px solid var(--accent-ml)" : "1px solid var(--border-subtle)",
+                  cursor: "pointer",
+                }}
+              >
+                {sub.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Mobile Sub-Tab Pills for Explore / Opportunities (< 768px only via CSS) */}
       {mobileTab === "opportunities" && (
@@ -511,7 +618,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* Global Trade Execution Modal (Mobile Bottom-Sheet) */}
+      {/* Global Trade Execution Modal (Equity - Mobile Bottom-Sheet) */}
       {(() => {
         const modalStock = stocks.find((s) => s.ticker === modalTradeTicker);
         const modalHolding = paperAccount?.holdings.find((h) => h.ticker === modalTradeTicker);
@@ -534,11 +641,25 @@ export default function Home() {
         );
       })()}
 
+      {/* Global Futures Trade Execution Modal (Mobile Bottom-Sheet) */}
+      <FuturesTradeModal
+        isOpen={globalFuturesModalOpen}
+        onClose={() => setGlobalFuturesModalOpen(false)}
+        ticker={modalFuturesTicker}
+        initialSide={modalFuturesSide}
+        initialLots={modalFuturesLots}
+        availableCash={paperAccount?.available_cash ?? 100000.0}
+        userId={activePaperUser.id}
+        onTradeExecuted={(updated) => {
+          setPaperAccount(updated);
+        }}
+      />
+
       {/* Mobile Fixed Bottom Navigation Bar (Active on mobile screens < 768px) */}
       <MobileBottomNav
         activeTab={mobileTab}
         onChangeTab={handleMobileTabChange}
-        holdingsCount={paperAccount?.holdings.length ?? 0}
+        holdingsCount={totalActivePositions}
         userName={activePaperUser.name}
       />
     </div>

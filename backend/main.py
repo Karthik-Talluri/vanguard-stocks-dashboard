@@ -61,11 +61,16 @@ def read_root():
             "/api/stocks",
             "/api/btst",
             "/api/futures-income/opportunities",
+            "/api/futures/contracts",
+            "/api/futures/contract/{ticker}",
             "/api/short-term-picks",
             "/api/multibagger-picks",
             "/api/health",
             "/api/paper-trading/users",
-            "/api/paper-trading/account"
+            "/api/paper-trading/account",
+            "/api/paper-trading/futures/order",
+            "/api/paper-trading/futures/close",
+            "/api/watchlist"
         ]
     }
 
@@ -1016,12 +1021,14 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/api/futures-income/opportunities")
 def get_futures_opportunities():
+    from futures_contracts import get_contract_spec
     results = []
     # Loop over all Nifty 50 stocks
     for ticker, meta in STOCKS_METADATA.items():
         try:
             data = load_data_for_ticker(ticker, calculate_inds=True)
             opp = futures_engine.analyze_opportunity_master(ticker, data)
+            spec = opp.get("futures_contract_spec") or get_contract_spec(ticker, opp["spot_price"])
             results.append({
                 "ticker": opp["ticker"],
                 "sector": meta["sector"],
@@ -1029,6 +1036,12 @@ def get_futures_opportunities():
                 "pop": opp["recommendation"]["pop"],
                 "expected_yield": opp["recommendation"]["expected_yield"],
                 "price": opp["spot_price"],
+                "futures_price": spec["futures_price"],
+                "exchange": spec["exchange"],
+                "expiry_date": spec["expiry_date"],
+                "expiry_formatted": spec["expiry_formatted"],
+                "lot_size": spec["lot_size"],
+                "margin_per_lot": spec["margin_per_lot"],
                 "future_contract": opp["recommendation"]["future_contract"],
                 "option_contract": opp["recommendation"]["option_contract"],
                 "expected_return": opp["recommendation"]["expected_return"],
@@ -1039,6 +1052,89 @@ def get_futures_opportunities():
     # Rank by strategy score descending
     results = sorted(results, key=lambda x: x["strategy_score"], reverse=True)
     return results
+
+
+@app.get("/api/futures/contracts")
+def list_futures_contracts(response: Response = None):
+    """Returns NSE Futures contract specs (lot sizes, dynamic expiry, futures price, margin) for all 50 NSE stocks."""
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    from futures_contracts import get_contract_spec, get_futures_config, get_nse_expiry_dates
+
+    live_stock_data = get_all_live_stocks()
+    quotes = live_stock_data.get("quotes", {})
+    config = get_futures_config()
+    expiries = get_nse_expiry_dates()
+
+    contracts = []
+    for ticker in sorted(STOCKS_METADATA.keys()):
+        q = quotes.get(ticker) or get_live_stock_quote(ticker)
+        spot = float(q["price"]) if (q and q.get("price")) else float(VERIFIED_NSE_STOCK_FALLBACKS.get(ticker, {}).get("price", 0.0))
+        if spot <= 0:
+            continue
+        spec = get_contract_spec(ticker, spot)
+        spec["sector"] = STOCKS_METADATA[ticker].get("sector", "Equities")
+        contracts.append(spec)
+
+    return {
+        "exchange": config.get("exchange", "NSE"),
+        "default_margin_pct": config.get("default_margin_pct", 0.05),
+        "expiries": expiries,
+        "contracts": contracts,
+    }
+
+
+@app.get("/api/futures/contract/{ticker}")
+def get_single_futures_contract(
+    ticker: str,
+    lots: int = Query(1, ge=1),
+    expiry_date: Optional[str] = Query(None),
+    response: Response = None,
+):
+    """Returns exact NSE Futures contract spec, lot size math, required margin, and estimated trade value for ticker."""
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    from futures_contracts import get_contract_spec
+
+    sym = ticker.upper().strip()
+    if sym not in STOCKS_METADATA and sym not in VERIFIED_NSE_STOCK_FALLBACKS:
+        raise HTTPException(status_code=404, detail=f"Futures contract for '{sym}' not found.")
+
+    q = get_live_stock_quote(sym)
+    spot = float(q["price"]) if (q and q.get("price")) else float(VERIFIED_NSE_STOCK_FALLBACKS.get(sym, {}).get("price", 0.0))
+    if spot <= 0:
+        raise HTTPException(status_code=400, detail=f"Unable to resolve live spot price for '{sym}'.")
+
+    spec = get_contract_spec(sym, spot, expiry_date=expiry_date, lots=lots)
+    spec["sector"] = STOCKS_METADATA.get(sym, {}).get("sector", "Equities")
+    return spec
+
+
+class FuturesConfigUpdateRequest(BaseModel):
+    lot_sizes: Optional[Dict[str, int]] = None
+    default_margin_pct: Optional[float] = None
+    annual_carry_rate: Optional[float] = None
+
+
+@app.post("/api/futures/contracts/config")
+def configure_futures_contracts(req: FuturesConfigUpdateRequest, response: Response = None):
+    """Allows updating configurable exchange Futures contract lot sizes & margin rules."""
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    from futures_contracts import update_futures_config
+    try:
+        updated = update_futures_config(
+            lot_sizes=req.lot_sizes,
+            default_margin_pct=req.default_margin_pct,
+            annual_carry_rate=req.annual_carry_rate,
+        )
+        return {"success": True, "config": updated}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
 
 
 @app.get("/api/futures-income/detail/{ticker}")
@@ -1262,6 +1358,26 @@ class PaperTradeOrderRequest(BaseModel):
     ticker: str
     order_type: str  # "BUY" or "SELL"
     quantity: int
+    idempotency_key: Optional[str] = None
+
+class FuturesOrderRequest(BaseModel):
+    user_id: str = "usr_karthik"
+    ticker: str
+    side: str  # "BUY" or "SELL"
+    lots: int
+    order_type: str = "MARKET"  # "MARKET" or "LIMIT"
+    limit_price: Optional[float] = None
+    expiry_date: Optional[str] = None
+    idempotency_key: Optional[str] = None
+
+class FuturesCloseRequest(BaseModel):
+    user_id: str = "usr_karthik"
+    position_id: str
+    idempotency_key: Optional[str] = None
+
+class FuturesCancelRequest(BaseModel):
+    user_id: str = "usr_karthik"
+    position_id: str
 
 class PaperTradeResetRequest(BaseModel):
     user_id: str = "usr_karthik"
@@ -1270,6 +1386,14 @@ class PaperTradeSyncRequest(BaseModel):
     user_id: str = "usr_karthik"
     account: Optional[Dict[str, Any]] = None
     transactions: Optional[List[Dict[str, Any]]] = None
+
+class WatchlistModifyRequest(BaseModel):
+    user_id: str = "usr_karthik"
+    ticker: str
+
+class WatchlistSyncRequest(BaseModel):
+    user_id: str = "usr_karthik"
+    tickers: List[str] = []
 
 
 @app.get("/api/paper-trading/users")
@@ -1289,7 +1413,7 @@ def get_paper_users(response: Response = None):
 def get_paper_account(user_id: str = "usr_karthik", response: Response = None):
     """
     Returns the virtual trading account details:
-    Cash, Total Portfolio Value, Holdings, Realized P&L, Unrealized P&L.
+    Cash, Total Portfolio Value, Equity Holdings, Futures Positions, Realized & Unrealized P&L.
     """
     if response:
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -1302,7 +1426,7 @@ def get_paper_account(user_id: str = "usr_karthik", response: Response = None):
 @app.post("/api/paper-trading/order")
 def place_paper_order(req: PaperTradeOrderRequest, response: Response = None):
     """
-    Executes a simulated market order (BUY or SELL) using verified live NSE prices.
+    Executes a simulated equity market order (BUY or SELL) using verified live NSE prices.
     Deducts/credits virtual cash and maintains user holdings.
     """
     if response:
@@ -1311,7 +1435,10 @@ def place_paper_order(req: PaperTradeOrderRequest, response: Response = None):
         response.headers["Expires"] = "0"
     from paper_trading_service import execute_order, get_account_summary
     try:
-        order_res = execute_order(req.user_id, req.ticker, req.order_type, req.quantity)
+        order_res = execute_order(
+            req.user_id, req.ticker, req.order_type, req.quantity,
+            idempotency_key=req.idempotency_key,
+        )
         account = get_account_summary(req.user_id)
         return {
             "success": True,
@@ -1324,10 +1451,96 @@ def place_paper_order(req: PaperTradeOrderRequest, response: Response = None):
         raise HTTPException(status_code=500, detail=f"Order execution error: {str(e)}")
 
 
+@app.post("/api/paper-trading/futures/order")
+def place_futures_paper_order(req: FuturesOrderRequest, response: Response = None):
+    """
+    Executes a simulated NSE Futures BUY or SELL order with lot size and share quantity math.
+    Supports MARKET & LIMIT orders and idempotent deduplication.
+    """
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    from paper_trading_service import execute_futures_order, get_account_summary
+    try:
+        order_res = execute_futures_order(
+            user_id=req.user_id,
+            ticker=req.ticker,
+            side=req.side,
+            lots=req.lots,
+            order_type=req.order_type,
+            limit_price=req.limit_price,
+            expiry_date=req.expiry_date,
+            idempotency_key=req.idempotency_key,
+        )
+        account = get_account_summary(req.user_id)
+        return {
+            "success": True,
+            "order": order_res,
+            "account": account
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Futures order execution error: {str(e)}")
+
+
+@app.post("/api/paper-trading/futures/close")
+def close_futures_paper_position(req: FuturesCloseRequest, response: Response = None):
+    """
+    Closes an individual open Futures position, settles Realized P&L, and releases blocked margin.
+    """
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    from paper_trading_service import close_futures_position, get_account_summary
+    try:
+        close_res = close_futures_position(
+            user_id=req.user_id,
+            position_id=req.position_id,
+            idempotency_key=req.idempotency_key,
+        )
+        account = get_account_summary(req.user_id)
+        return {
+            "success": True,
+            "order": close_res,
+            "account": account
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Futures close error: {str(e)}")
+
+
+@app.post("/api/paper-trading/futures/cancel")
+def cancel_futures_paper_order(req: FuturesCancelRequest, response: Response = None):
+    """
+    Cancels a resting pending LIMIT Futures order and refunds reserved margin to virtual cash.
+    """
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    from paper_trading_service import cancel_futures_order, get_account_summary
+    try:
+        cancel_res = cancel_futures_order(req.user_id, req.position_id)
+        account = get_account_summary(req.user_id)
+        return {
+            "success": True,
+            "cancel": cancel_res,
+            "account": account
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Futures cancel error: {str(e)}")
+
+
 @app.get("/api/paper-trading/transactions")
 def get_paper_transactions(user_id: str = "usr_karthik", order_type: Optional[str] = None, limit: int = 100, response: Response = None):
     """
-    Returns the simulated order execution history with filters.
+    Returns the simulated order execution history with filters (ALL, BUY, SELL, FUTURES).
     """
     if response:
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -1340,7 +1553,7 @@ def get_paper_transactions(user_id: str = "usr_karthik", order_type: Optional[st
 @app.post("/api/paper-trading/reset")
 def reset_paper_account(req: PaperTradeResetRequest, response: Response = None):
     """
-    Resets the virtual trading account back to ₹1,00,000 cash and wipes active positions.
+    Resets the virtual trading account back to ₹1,00,000 cash and wipes active Equity & Futures positions.
     """
     if response:
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -1372,6 +1585,54 @@ def sync_paper_account(req: PaperTradeSyncRequest, response: Response = None):
         "success": True,
         "account": account
     }
+
+
+@app.get("/api/watchlist")
+def get_watchlist(user_id: str = "usr_karthik", response: Response = None):
+    """Returns per-user persisted watchlist tickers."""
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    from paper_trading_service import get_user_watchlist, normalize_user_id
+    uid = normalize_user_id(user_id)
+    return {"user_id": uid, "tickers": get_user_watchlist(uid)}
+
+
+@app.post("/api/watchlist/add")
+def add_watchlist_ticker(req: WatchlistModifyRequest, response: Response = None):
+    """Adds a stock ticker to the user's persisted watchlist."""
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    from paper_trading_service import add_user_watchlist, normalize_user_id
+    try:
+        uid = normalize_user_id(req.user_id)
+        tickers = add_user_watchlist(uid, req.ticker)
+        return {"success": True, "user_id": uid, "tickers": tickers}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+
+
+@app.post("/api/watchlist/remove")
+def remove_watchlist_ticker(req: WatchlistModifyRequest, response: Response = None):
+    """Removes a stock ticker from the user's persisted watchlist."""
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    from paper_trading_service import remove_user_watchlist, normalize_user_id
+    uid = normalize_user_id(req.user_id)
+    tickers = remove_user_watchlist(uid, req.ticker)
+    return {"success": True, "user_id": uid, "tickers": tickers}
+
+
+@app.post("/api/watchlist/sync")
+def sync_watchlist(req: WatchlistSyncRequest, response: Response = None):
+    """Synchronizes a user's watchlist with the backend SQLite database."""
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    from paper_trading_service import sync_user_watchlist, normalize_user_id
+    uid = normalize_user_id(req.user_id)
+    tickers = sync_user_watchlist(uid, req.tickers)
+    return {"success": True, "user_id": uid, "tickers": tickers}
 
 
 

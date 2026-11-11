@@ -1,38 +1,13 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { StockOverview } from "../utils/api";
-
-const WATCHLIST_STORAGE_PREFIX = "vanguard_watchlist_v1_";
-const DEFAULT_WATCHLIST_TICKERS = ["RELIANCE", "TCS", "HDFCBANK", "INFYS", "TATAMOTORS"];
-
-function loadWatchlistTickers(userId: string): string[] {
-  if (typeof window === "undefined") return DEFAULT_WATCHLIST_TICKERS;
-  const key = `${WATCHLIST_STORAGE_PREFIX}${userId || "usr_karthik"}`;
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (raw !== null) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed.filter((t): t is string => typeof t === "string" && t.length > 0);
-      }
-    }
-    window.localStorage.setItem(key, JSON.stringify(DEFAULT_WATCHLIST_TICKERS));
-  } catch (err) {
-    console.error("Failed to load watchlist from localStorage:", err);
-  }
-  return DEFAULT_WATCHLIST_TICKERS;
-}
-
-function saveWatchlistTickers(userId: string, tickers: string[]): void {
-  if (typeof window === "undefined") return;
-  const key = `${WATCHLIST_STORAGE_PREFIX}${userId || "usr_karthik"}`;
-  try {
-    window.localStorage.setItem(key, JSON.stringify(tickers));
-  } catch (err) {
-    console.error("Failed to save watchlist to localStorage:", err);
-  }
-}
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  StockOverview,
+  getLocalWatchlistTickers,
+  fetchWatchlist,
+  addToWatchlist,
+  removeFromWatchlist,
+} from "../utils/api";
 
 interface WatchlistViewProps {
   stocks: StockOverview[];
@@ -47,8 +22,31 @@ export default function WatchlistView({
   userName,
   onSelectStock,
 }: WatchlistViewProps) {
-  const [savedTickers, setSavedTickers] = useState<string[]>(() => loadWatchlistTickers(userId));
+  const [savedTickers, setSavedTickers] = useState<string[]>(() => getLocalWatchlistTickers(userId));
   const [selectedToAdd, setSelectedToAdd] = useState<string>("");
+  const [syncing, setSyncing] = useState<boolean>(false);
+  const [mutating, setMutating] = useState<boolean>(false);
+  const [wlError, setWlError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSyncing(true);
+    setWlError(null);
+    setSavedTickers(getLocalWatchlistTickers(userId));
+    fetchWatchlist(userId)
+      .then((tickers) => {
+        if (!cancelled) setSavedTickers(tickers);
+      })
+      .catch((err) => {
+        if (!cancelled) setWlError(err?.message || "Failed to sync watchlist");
+      })
+      .finally(() => {
+        if (!cancelled) setSyncing(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   const stocksByTicker = useMemo(() => {
     const map = new Map<string, StockOverview>();
@@ -70,19 +68,34 @@ export default function WatchlistView({
       ? selectedToAdd
       : availableToAdd[0]?.ticker || "";
 
-  const handleAddTicker = (tickerToAdd?: string) => {
+  const handleAddTicker = async (tickerToAdd?: string) => {
     const target = (tickerToAdd || effectiveSelectedToAdd || "").trim().toUpperCase();
-    if (!target || savedTickers.includes(target)) return;
-    const next = [...savedTickers, target];
-    setSavedTickers(next);
-    saveWatchlistTickers(userId, next);
-    setSelectedToAdd("");
+    if (!target || savedTickers.includes(target) || mutating) return;
+    setMutating(true);
+    setWlError(null);
+    try {
+      const updated = await addToWatchlist(userId, target);
+      setSavedTickers(updated);
+      setSelectedToAdd("");
+    } catch (err: unknown) {
+      setWlError(err instanceof Error ? err.message : `Failed to add ${target} to watchlist`);
+    } finally {
+      setMutating(false);
+    }
   };
 
-  const handleRemoveTicker = (ticker: string) => {
-    const next = savedTickers.filter((t) => t !== ticker);
-    setSavedTickers(next);
-    saveWatchlistTickers(userId, next);
+  const handleRemoveTicker = async (ticker: string) => {
+    if (mutating) return;
+    setMutating(true);
+    setWlError(null);
+    try {
+      const updated = await removeFromWatchlist(userId, ticker);
+      setSavedTickers(updated);
+    } catch (err: unknown) {
+      setWlError(err instanceof Error ? err.message : `Failed to remove ${ticker} from watchlist`);
+    } finally {
+      setMutating(false);
+    }
   };
 
   const getSignalColor = (rec?: string) => {
@@ -214,23 +227,29 @@ export default function WatchlistView({
           <button
             type="button"
             onClick={() => handleAddTicker()}
-            disabled={!effectiveSelectedToAdd}
+            disabled={!effectiveSelectedToAdd || mutating}
             style={{
               padding: "9px 14px",
               borderRadius: "8px",
-              background: effectiveSelectedToAdd ? "var(--accent-ml)" : "var(--border-subtle)",
+              background: effectiveSelectedToAdd && !mutating ? "var(--accent-ml)" : "var(--border-subtle)",
               color: "#ffffff",
               border: "none",
               fontSize: "12px",
               fontWeight: "800",
-              cursor: effectiveSelectedToAdd ? "pointer" : "not-allowed",
+              cursor: effectiveSelectedToAdd && !mutating ? "pointer" : "not-allowed",
               minHeight: "38px",
               flexShrink: 0,
             }}
           >
-            + Add Stock
+            {mutating ? "Saving..." : "+ Add Stock"}
           </button>
         </div>
+
+        {(syncing || wlError) && (
+          <div style={{ fontSize: "11px", color: wlError ? "var(--color-sell)" : "var(--color-text-muted)", fontWeight: wlError ? "700" : "500" }}>
+            {wlError ? `⚠️ ${wlError}` : `Syncing ${userName}'s watchlist...`}
+          </div>
+        )}
       </div>
 
       {/* Saved Stocks List */}
@@ -451,11 +470,35 @@ export default function WatchlistView({
                     >
                       + BUY
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (typeof window !== "undefined") {
+                          window.dispatchEvent(
+                            new CustomEvent("open-futures-trade", { detail: { ticker, side: "BUY", lots: 1 } })
+                          );
+                        }
+                      }}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: "6px",
+                        fontSize: "11px",
+                        fontWeight: "800",
+                        background: "rgba(79, 70, 229, 0.1)",
+                        color: "var(--accent-ml)",
+                        border: "1px solid rgba(79, 70, 229, 0.35)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      ⚡ Futures
+                    </button>
                   </div>
 
                   <button
                     type="button"
                     aria-label={`Remove ${ticker} from watchlist`}
+                    disabled={mutating}
                     onClick={() => handleRemoveTicker(ticker)}
                     style={{
                       padding: "6px 10px",
@@ -465,7 +508,8 @@ export default function WatchlistView({
                       background: "rgba(220, 38, 38, 0.06)",
                       color: "var(--color-sell)",
                       border: "1px solid rgba(220, 38, 38, 0.25)",
-                      cursor: "pointer",
+                      cursor: mutating ? "not-allowed" : "pointer",
+                      opacity: mutating ? 0.6 : 1,
                     }}
                   >
                     Remove

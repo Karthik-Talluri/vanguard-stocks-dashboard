@@ -1021,6 +1021,25 @@ export default function MultiBaggerPicks({ onSelectStock }: MultiBaggerPicksProp
                         >
                           + BUY
                         </button>
+                        <button
+                          onClick={() => {
+                            if (typeof window !== "undefined" && selectedStock.ticker) {
+                              window.dispatchEvent(new CustomEvent("open-futures-trade", { detail: { ticker: selectedStock.ticker, side: "BUY", lots: 1 } }));
+                            }
+                          }}
+                          style={{
+                            padding: "2px 8px",
+                            background: "rgba(79, 70, 229, 0.1)",
+                            border: "1px solid rgba(79, 70, 229, 0.35)",
+                            borderRadius: "4px",
+                            fontSize: "10px",
+                            color: "var(--accent-ml)",
+                            fontWeight: "800",
+                            cursor: "pointer"
+                          }}
+                        >
+                          ⚡ FUTURES
+                        </button>
                       </div>
                     </div>
 

@@ -27,7 +27,11 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
   // Strategy Mode Toggle: Covered Call Income vs 2-Day Futures Swing
   const [strategyMode, setStrategyMode] = useState<"income" | "swing">("income");
 
+  // Interactive NSE Futures lot count state for instant quantity & margin calculation
+  const [futuresLots, setFuturesLots] = useState<number>(1);
+
   useEffect(() => {
+    setFuturesLots(1);
     const loadDetail = async () => {
       try {
         setLoading(true);
@@ -153,6 +157,20 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
   const analystScore = advFeatures.analyst_score ?? 50;
   const analystTpTrend = advFeatures.analyst_tp_revision_trend ?? "STABLE";
   const analystEstTrend = advFeatures.analyst_est_revision_trend ?? "STABLE";
+
+  // NSE Futures Contract Specs for direct BUY FUTURES / SELL FUTURES trading
+  const futSpec = detail.futures_contract_spec;
+  const futExchange = futSpec?.exchange || detail.exchange || "NSE";
+  const futLotSize = futSpec?.lot_size || detail.lot_size || 1;
+  const futPrice = futSpec?.futures_price || detail.futures_price || detail.spot_price;
+  const futExpiry = futSpec?.expiry_formatted || detail.futures_expiry_formatted || "Current Month";
+  const futContractName = futSpec?.contract_symbol || detail.futures_contract || `${detail.ticker} FUT`;
+  const futMarginPct = futSpec?.margin_pct ?? 0.05;
+  const futMarginPctDisplay = futSpec?.margin_pct_display ?? 5.0;
+  const safeFutLots = Math.max(1, futuresLots || 1);
+  const futTotalShares = futLotSize * safeFutLots;
+  const futTradeValue = Math.round(futPrice * futTotalShares * 100) / 100;
+  const futRequiredMargin = Math.round(futTradeValue * futMarginPct * 100) / 100;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -282,7 +300,7 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
               </div>
             </div>
 
-            {/* Strategy Score Gauge */}
+              {/* Strategy Score Gauge */}
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
               <span style={{ fontSize: "10px", fontWeight: "800", color: "var(--color-text-muted)", textTransform: "uppercase" }}>
                 {strategyMode === "income" ? "Income Score" : "Swing Score"}
@@ -308,6 +326,147 @@ export default function FuturesResearch({ selectedTicker, chartData, chartInterv
                   ? (detail.strategy_score >= 75 ? "HIGH CONVICTION" : "MODERATE") 
                   : (detail.btst_recommendation?.recommendation ?? "HOLD")}
               </span>
+            </div>
+          </div>
+
+          {/* NSE Futures Contract Trading Card (All 10 Spec Fields + BUY FUTURES / SELL FUTURES) */}
+          <div className="glass-panel" style={{ padding: "clamp(14px, 3vw, 18px)", display: "flex", flexDirection: "column", gap: "12px", border: "1px solid rgba(79, 70, 229, 0.25)" }} data-testid="futures-contract-panel">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "13px", fontWeight: "900", color: "var(--color-text-primary)", textTransform: "uppercase" }}>
+                  ⚡ Futures Contract &amp; Lot Trading
+                </span>
+                <span style={{ fontSize: "10px", fontWeight: "800", padding: "2px 8px", borderRadius: "12px", background: "rgba(79, 70, 229, 0.1)", color: "var(--accent-ml)", border: "1px solid rgba(79, 70, 229, 0.25)" }}>
+                  {futExchange} • {futContractName}
+                </span>
+              </div>
+              <span style={{ fontSize: "10px", fontWeight: "700", color: "var(--color-text-muted)" }}>
+                Sim {futMarginPctDisplay}% Paper Margin
+              </span>
+            </div>
+
+            <div className="four-to-two-grid" style={{ background: "rgba(0,0,0,0.02)", padding: "10px", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
+              <div>
+                <div style={{ fontSize: "9px", fontWeight: "700", color: "var(--color-text-muted)" }}>STOCK NAME</div>
+                <div style={{ fontSize: "13px", fontWeight: "900", color: "var(--color-text-primary)" }}>{detail.ticker}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: "9px", fontWeight: "700", color: "var(--color-text-muted)" }}>EXCHANGE</div>
+                <div style={{ fontSize: "13px", fontWeight: "800", color: "var(--color-text-primary)" }}>{futExchange}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: "9px", fontWeight: "700", color: "var(--color-text-muted)" }}>SPOT PRICE</div>
+                <div style={{ fontSize: "13px", fontWeight: "800", color: "var(--color-text-primary)" }}>₹{detail.spot_price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: "9px", fontWeight: "700", color: "var(--color-text-muted)" }}>FUTURES PRICE</div>
+                <div style={{ fontSize: "13px", fontWeight: "900", color: "var(--accent-ml)" }}>₹{futPrice.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: "9px", fontWeight: "700", color: "var(--color-text-muted)" }}>CONTRACT EXPIRY</div>
+                <div style={{ fontSize: "12px", fontWeight: "800", color: "var(--color-text-primary)" }}>{futExpiry}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: "9px", fontWeight: "700", color: "var(--color-text-muted)" }}>CONTRACT LOT SIZE</div>
+                <div style={{ fontSize: "13px", fontWeight: "900", color: "var(--color-text-primary)" }} data-testid="research-lot-size">{futLotSize.toLocaleString("en-IN")}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: "9px", fontWeight: "700", color: "var(--color-text-muted)" }}>NUMBER OF LOTS</div>
+                <div style={{ display: "inline-flex", alignItems: "center", gap: "4px", marginTop: "2px" }}>
+                  <button
+                    type="button"
+                    aria-label="Decrease Futures Lots"
+                    onClick={() => setFuturesLots(Math.max(1, safeFutLots - 1))}
+                    style={{ width: "26px", height: "26px", padding: 0, fontSize: "13px", fontWeight: "900", borderRadius: "5px", background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}
+                  >
+                    −
+                  </button>
+                  <input
+                    type="number"
+                    aria-label="Number of Lots"
+                    min={1}
+                    value={safeFutLots}
+                    onChange={(e) => setFuturesLots(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    style={{ width: "44px", height: "26px", padding: "0 4px", textAlign: "center", fontSize: "12px", fontWeight: "900", borderRadius: "5px", background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}
+                  />
+                  <button
+                    type="button"
+                    aria-label="Increase Futures Lots"
+                    onClick={() => setFuturesLots(safeFutLots + 1)}
+                    style={{ width: "26px", height: "26px", padding: 0, fontSize: "13px", fontWeight: "900", borderRadius: "5px", background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: "9px", fontWeight: "700", color: "var(--color-text-muted)" }}>TOTAL SHARE QTY</div>
+                <div style={{ fontSize: "13px", fontWeight: "900", color: "var(--color-buy)" }} data-testid="research-total-qty">{futTotalShares.toLocaleString("en-IN")}</div>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "10px", padding: "8px 10px", borderRadius: "8px", background: "rgba(79, 70, 229, 0.04)", border: "1px solid rgba(79, 70, 229, 0.16)" }}>
+              <div>
+                <div style={{ fontSize: "9.5px", fontWeight: "700", color: "var(--color-text-muted)", textTransform: "uppercase" }}>Estimated Trade Value</div>
+                <div style={{ fontSize: "14px", fontWeight: "900", color: "var(--color-text-primary)" }} data-testid="research-trade-value">
+                  ₹{futTradeValue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: "9.5px", fontWeight: "700", color: "var(--color-text-muted)", textTransform: "uppercase" }}>Required Margin ({futMarginPctDisplay}%)</div>
+                <div style={{ fontSize: "14px", fontWeight: "900", color: "var(--accent-ml)" }} data-testid="research-required-margin">
+                  ₹{futRequiredMargin.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    window.dispatchEvent(new CustomEvent("open-futures-trade", {
+                      detail: { ticker: detail.ticker, side: "BUY", lots: safeFutLots }
+                    }));
+                  }
+                }}
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  fontSize: "12px",
+                  fontWeight: "900",
+                  background: "var(--color-buy)",
+                  border: "none",
+                  color: "#ffffff",
+                  cursor: "pointer",
+                  boxShadow: "0 2px 8px rgba(5, 150, 105, 0.3)",
+                }}
+              >
+                BUY FUTURES ({futTotalShares.toLocaleString("en-IN")} Qty)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    window.dispatchEvent(new CustomEvent("open-futures-trade", {
+                      detail: { ticker: detail.ticker, side: "SELL", lots: safeFutLots }
+                    }));
+                  }
+                }}
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  fontSize: "12px",
+                  fontWeight: "900",
+                  background: "var(--color-sell)",
+                  border: "none",
+                  color: "#ffffff",
+                  cursor: "pointer",
+                  boxShadow: "0 2px 8px rgba(220, 38, 38, 0.3)",
+                }}
+              >
+                SELL FUTURES ({futTotalShares.toLocaleString("en-IN")} Qty)
+              </button>
             </div>
           </div>
 

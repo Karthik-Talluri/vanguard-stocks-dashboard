@@ -40,6 +40,18 @@ export default function FuturesScanners() {
     }
   };
 
+  const handleOpenFuturesTrade = (ticker: string, side: "BUY" | "SELL" = "BUY") => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("open-futures-trade", { detail: { ticker, side, lots: 1 } }));
+    }
+  };
+
+  const getExpiryMonthLabel = (opp?: FuturesOpportunity) => {
+    const parts = (opp?.expiry_formatted || "").trim().split(/\s+/);
+    if (parts.length >= 2 && parts[1]) return parts[1].toUpperCase();
+    return new Date().toLocaleString("en-US", { month: "short" }).toUpperCase();
+  };
+
   // Generate strategy setups based on real prices from opportunities
   const getCashSecuredPuts = () => {
     return opportunities.slice(0, 8).map((o, idx) => {
@@ -47,11 +59,12 @@ export default function FuturesScanners() {
       const premium = Math.round(o.price * 0.02 * 100) / 100;
       const margin = o.price * 0.20;
       const yieldPct = (premium / margin) * 100;
+      const expMonth = getExpiryMonthLabel(o);
       return {
         rank: idx + 1,
         ticker: o.ticker,
         price: o.price,
-        put_contract: `${o.ticker} JUL ${strike} PE`,
+        put_contract: `${o.ticker} ${expMonth} ${strike} PE`,
         premium: premium,
         pop: 85 + (idx % 5),
         yield: yieldPct
@@ -175,7 +188,14 @@ export default function FuturesScanners() {
                   {opportunities.slice(0, 10).map((o, idx) => (
                     <tr key={o.ticker} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
                       <td style={{ padding: "12px 16px", fontWeight: "700" }}>#{idx + 1}</td>
-                      <td style={{ padding: "12px 16px", fontWeight: "800" }}>{o.ticker}</td>
+                      <td style={{ padding: "12px 16px" }}>
+                        <div style={{ fontWeight: "800" }}>{o.ticker}</div>
+                        {o.lot_size && (
+                          <div style={{ fontSize: "10px", color: "var(--color-text-muted)" }}>
+                            Lot: {o.lot_size.toLocaleString("en-IN")} {o.expiry_formatted ? `• ${o.expiry_formatted}` : ""}
+                          </div>
+                        )}
+                      </td>
                       <td style={{ padding: "12px 16px" }}>
                         <span style={{ background: "rgba(59, 130, 246, 0.08)", color: "#3b82f6", padding: "2px 8px", borderRadius: "20px", fontWeight: "700" }}>
                           {o.strategy_score}
@@ -186,21 +206,40 @@ export default function FuturesScanners() {
                       <td style={{ padding: "12px 16px", textAlign: "center", fontWeight: "700" }}>{o.expected_yield.toFixed(2)}%</td>
                       <td style={{ padding: "12px 16px", textAlign: "center", color: "#3b82f6", fontWeight: "700" }}>{o.expected_return.toFixed(2)}%</td>
                       <td style={{ padding: "12px 16px", textAlign: "center" }}>
-                        <button
-                          onClick={() => handleOpenTrade(o.ticker)}
-                          style={{
-                            padding: "4px 8px",
-                            borderRadius: "4px",
-                            background: "rgba(5, 150, 105, 0.1)",
-                            border: "1px solid var(--color-buy)",
-                            color: "var(--color-buy)",
-                            fontSize: "11px",
-                            fontWeight: "700",
-                            cursor: "pointer"
-                          }}
-                        >
-                          + Paper Buy
-                        </button>
+                        <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
+                          <button
+                            onClick={() => handleOpenFuturesTrade(o.ticker, o.strategy_type === "sell_call" ? "SELL" : "BUY")}
+                            style={{
+                              padding: "4px 8px",
+                              borderRadius: "4px",
+                              background: "rgba(79, 70, 229, 0.1)",
+                              border: "1px solid var(--accent-ml)",
+                              color: "var(--accent-ml)",
+                              fontSize: "11px",
+                              fontWeight: "700",
+                              cursor: "pointer",
+                              whiteSpace: "nowrap"
+                            }}
+                          >
+                            ⚡ Trade FUT
+                          </button>
+                          <button
+                            onClick={() => handleOpenTrade(o.ticker)}
+                            style={{
+                              padding: "4px 8px",
+                              borderRadius: "4px",
+                              background: "rgba(5, 150, 105, 0.1)",
+                              border: "1px solid var(--color-buy)",
+                              color: "var(--color-buy)",
+                              fontSize: "11px",
+                              fontWeight: "700",
+                              cursor: "pointer",
+                              whiteSpace: "nowrap"
+                            }}
+                          >
+                            + Paper Buy
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -216,6 +255,9 @@ export default function FuturesScanners() {
                     <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                       <span style={{ fontWeight: "800", color: "var(--color-text-muted)" }}>#{idx + 1}</span>
                       <span style={{ fontWeight: "900", fontSize: "15px", color: "var(--color-text-primary)" }}>{o.ticker}</span>
+                      {o.lot_size && (
+                        <span style={{ fontSize: "10px", color: "var(--color-text-muted)" }}>Lot {o.lot_size}</span>
+                      )}
                     </div>
                     <span style={{ background: "rgba(59, 130, 246, 0.1)", color: "#3b82f6", padding: "2px 8px", borderRadius: "12px", fontWeight: "800", fontSize: "11px" }}>
                       Score: {o.strategy_score}
@@ -238,22 +280,40 @@ export default function FuturesScanners() {
                       <div style={{ color: "#3b82f6", fontWeight: "800" }}>{o.expected_return.toFixed(2)}%</div>
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleOpenTrade(o.ticker)}
-                    style={{
-                      width: "100%",
-                      padding: "8px",
-                      borderRadius: "6px",
-                      background: "rgba(5, 150, 105, 0.08)",
-                      border: "1px solid var(--color-buy)",
-                      color: "var(--color-buy)",
-                      fontSize: "12px",
-                      fontWeight: "800",
-                      cursor: "pointer"
-                    }}
-                  >
-                    + Paper Buy {o.ticker}
-                  </button>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                    <button
+                      onClick={() => handleOpenFuturesTrade(o.ticker, o.strategy_type === "sell_call" ? "SELL" : "BUY")}
+                      style={{
+                        width: "100%",
+                        padding: "8px",
+                        borderRadius: "6px",
+                        background: "rgba(79, 70, 229, 0.08)",
+                        border: "1px solid var(--accent-ml)",
+                        color: "var(--accent-ml)",
+                        fontSize: "12px",
+                        fontWeight: "800",
+                        cursor: "pointer"
+                      }}
+                    >
+                      ⚡ Trade FUT
+                    </button>
+                    <button
+                      onClick={() => handleOpenTrade(o.ticker)}
+                      style={{
+                        width: "100%",
+                        padding: "8px",
+                        borderRadius: "6px",
+                        background: "rgba(5, 150, 105, 0.08)",
+                        border: "1px solid var(--color-buy)",
+                        color: "var(--color-buy)",
+                        fontSize: "12px",
+                        fontWeight: "800",
+                        cursor: "pointer"
+                      }}
+                    >
+                      + Paper Buy
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

@@ -151,7 +151,7 @@ export default function UserProfileView({
               ₹{(account?.available_cash ?? 100000).toLocaleString("en-IN", { maximumFractionDigits: 1 })}
             </div>
             <div style={{ fontSize: "10px", color: "var(--color-text-muted)", marginTop: "1px" }}>
-              {account?.holdings.length ?? 0} active position{account?.holdings.length === 1 ? "" : "s"}
+              {account?.holdings.length ?? 0} eq • {account?.futures_positions?.length ?? 0} fut active
             </div>
           </div>
         </div>
@@ -276,7 +276,7 @@ export default function UserProfileView({
             }}
           >
             <div style={{ fontSize: "12px", color: "var(--color-text-primary)", fontWeight: "600" }}>
-              Are you sure you want to reset <strong>{activeUser.name}</strong>&apos;s virtual account? This restores available cash to ₹1,00,000.00 and clears their simulated holdings. Other users will not be affected.
+              Are you sure you want to reset <strong>{activeUser.name}</strong>&apos;s virtual account? This restores available cash to ₹1,00,000.00 and clears their simulated Equity holdings and Futures positions. Other users will not be affected.
             </div>
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
               <button

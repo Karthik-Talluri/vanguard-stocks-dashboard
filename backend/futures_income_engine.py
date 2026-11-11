@@ -3,30 +3,14 @@ import math
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, List, Optional
-
-# Standard lot sizes for Nifty 50 F&O stocks
-LOT_SIZES = {
-    "RELIANCE": 250, "TCS": 175, "INFYS": 400, "HDFCBANK": 550,
-    "ICICIBANK": 700, "SBIN": 1500, "ITC": 1600, "HINDUNILVR": 300,
-    "TATAMOTORS": 1425, "MARUTI": 100, "DRREDDY": 125, "SUNPHARMA": 700,
-    "WIPRO": 1500, "HCLTECH": 700, "TITAN": 175, "TATASTEEL": 5500,
-    "BAJFINANCE": 125, "AXISBANK": 625, "KOTAKBANK": 400, "BHARTIARTL": 950
-}
+from futures_contracts import (
+    get_lot_size as _get_nse_lot_size,
+    get_nse_expiry_dates,
+    get_contract_spec,
+)
 
 def get_lot_size(ticker: str, spot: float) -> int:
-    ticker = ticker.upper()
-    if ticker in LOT_SIZES:
-        return LOT_SIZES[ticker]
-    # Default to a lot size that keeps contract value ~6.5 Lakhs
-    val = 650000.0
-    raw_size = val / spot
-    # Round to nearest 50 or 100
-    if raw_size > 1000:
-        return int(round(raw_size / 500) * 500)
-    elif raw_size > 100:
-        return int(round(raw_size / 50) * 50)
-    else:
-        return int(max(10, round(raw_size / 10) * 10))
+    return _get_nse_lot_size(ticker, spot)
 
 def cdf(x: float) -> float:
     """Standard normal cumulative distribution function approximation."""
@@ -408,8 +392,9 @@ class FuturesIncomeEngine:
         candidates = []
         strikes = [base_strike - strike_step, base_strike, base_strike + strike_step, base_strike + 2 * strike_step]
         
-        # Expiry month label
-        month_label = "JUL" # Simulated near month contract
+        # Expiry month label (dynamic NSE near-month expiry)
+        near_expiries = get_nse_expiry_dates(count=1)
+        month_label = near_expiries[0]["month_label"] if near_expiries else "NEAR"
         
         for K in strikes:
             K = float(K)
@@ -550,7 +535,7 @@ class FuturesIncomeEngine:
             except Exception:
                 base_spot = 1000.0
         
-        lot_size = LOT_SIZES.get(ticker, 500)
+        lot_size = get_lot_size(ticker, base_spot)
         margin_blocked = base_spot * lot_size * 0.20
         
         for i in range(found):
@@ -640,32 +625,41 @@ class FuturesIncomeEngine:
         strategy_score += candle_res["adjustment"]
         strategy_score = min(100.0, max(0.0, strategy_score))
         
-        # Get optimal option selection
+        # Get optimal option selection & dynamic Futures contract spec
         spot = float(stock_df["Close"].iloc[-1])
+        contract_spec = get_contract_spec(ticker, spot)
         iv = premium_res["iv"] / 100.0
-        opp_res = self.evaluate_opportunity(ticker, spot, iv)
-        
+        opp_res = self.evaluate_opportunity(ticker, spot, iv, days_to_expiry=contract_spec["days_to_expiry"])
+
         # Position sizing (Lot details)
-        lot_size = get_lot_size(ticker, spot)
-        margin_blocked = spot * lot_size * 0.20
-        
+        lot_size = contract_spec["lot_size"]
+        margin_blocked = spot * lot_size * 0.20  # 20% NRML Covered-Call yield margin
+
         # Backtest statistics with live spot reference
         backtest_res = self.generate_backtest_results(ticker, spot=spot)
-        
+
         # Short-term BTST / 2-day Swing Recommendation integration
         from agents.btst_engine import calculate_btst_metrics
         from data_generator import STOCKS_METADATA
         sector = STOCKS_METADATA.get(ticker, {}).get("sector", "Banking")
         btst_res = calculate_btst_metrics(ticker, data, sector)
-        
+
         trend_align = strength_res["trend_alignment"]
         strategy_type = "covered_call" if trend_align == "Bullish Alignment" else "sell_call"
-        
+
         return {
             "ticker": ticker,
             "strategy_score": round(strategy_score, 1),
             "spot_price": round(spot, 2),
+            "futures_price": contract_spec["futures_price"],
+            "exchange": contract_spec["exchange"],
             "lot_size": lot_size,
+            "futures_expiry": contract_spec["expiry_date"],
+            "futures_expiry_formatted": contract_spec["expiry_formatted"],
+            "futures_contract": contract_spec["contract_symbol"],
+            "futures_required_margin": contract_spec["required_margin"],
+            "futures_trade_value": contract_spec["estimated_trade_value"],
+            "futures_contract_spec": contract_spec,
             "margin_blocked": round(margin_blocked, 2),
             "agents": {
                 "market_regime": regime_res,
@@ -678,7 +672,7 @@ class FuturesIncomeEngine:
             },
             "recommendation": {
                 "strategy_type": strategy_type,
-                "future_contract": f"{ticker} JUL FUT",
+                "future_contract": contract_spec["contract_symbol"],
                 "option_contract": opp_res["selected"]["option_symbol"],
                 "strike": opp_res["selected"]["strike"],
                 "premium": opp_res["selected"]["premium"],

@@ -143,6 +143,13 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
                         <div style={{ fontWeight: "800", color: "var(--color-text-primary)", fontSize: "13px" }}>
                           {opp.ticker}
                         </div>
+                        {(opp.lot_size || opp.expiry_formatted) && (
+                          <div style={{ fontSize: "10px", color: "var(--color-text-muted)", marginTop: "2px", whiteSpace: "nowrap" }}>
+                            {opp.lot_size ? `Lot: ${opp.lot_size.toLocaleString("en-IN")}` : ""}
+                            {opp.lot_size && opp.expiry_formatted ? " • " : ""}
+                            {opp.expiry_formatted || ""}
+                          </div>
+                        )}
                       </td>
                       <td style={{ padding: "14px 16px", color: "var(--color-text-secondary)" }}>
                         {opp.sector}
@@ -168,8 +175,13 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
                       <td style={{ padding: "14px 16px", textAlign: "center", fontWeight: "700", color: "var(--color-text-primary)", fontSize: "13px" }}>
                         {opp.expected_yield.toFixed(2)}%
                       </td>
-                      <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: "600" }}>
-                        ₹{opp.price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                      <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: "600", whiteSpace: "nowrap" }}>
+                        <div>₹{opp.price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
+                        {typeof opp.futures_price === "number" && (
+                          <div style={{ fontSize: "10px", color: "var(--accent-ml)", fontWeight: "700" }}>
+                            FUT: ₹{opp.futures_price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                          </div>
+                        )}
                       </td>
                       <td style={{ padding: "14px 16px" }}>
                         {opp.strategy_type === "sell_call" ? (
@@ -191,22 +203,60 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
                         )}
                       </td>
                       <td style={{ padding: "14px 16px", textAlign: "center" }}>
-                        <button
-                          style={{
-                            background: "none",
-                            border: "1px solid var(--border-subtle)",
-                            padding: "4px 10px",
-                            borderRadius: "6px",
-                            fontSize: "11px",
-                            fontWeight: "700",
-                            color: "var(--accent-ml)",
-                            cursor: "pointer",
-                            transition: "all 0.15s"
-                          }}
-                          className="research-btn"
-                        >
-                          Research 🔬
-                        </button>
+                        <div style={{ display: "flex", gap: "6px", justifyContent: "center", alignItems: "center" }}>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (typeof window !== "undefined") {
+                                window.dispatchEvent(
+                                  new CustomEvent("open-futures-trade", {
+                                    detail: {
+                                      ticker: opp.ticker,
+                                      side: opp.strategy_type === "sell_call" ? "SELL" : "BUY",
+                                      lots: 1,
+                                    },
+                                  })
+                                );
+                              }
+                            }}
+                            style={{
+                              background: "rgba(79, 70, 229, 0.1)",
+                              border: "1px solid rgba(79, 70, 229, 0.35)",
+                              padding: "4px 9px",
+                              borderRadius: "6px",
+                              fontSize: "11px",
+                              fontWeight: "800",
+                              color: "var(--accent-ml)",
+                              cursor: "pointer",
+                              whiteSpace: "nowrap"
+                            }}
+                          >
+                            ⚡ Trade FUT
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRowClick(opp.ticker);
+                            }}
+                            style={{
+                              background: "none",
+                              border: "1px solid var(--border-subtle)",
+                              padding: "4px 10px",
+                              borderRadius: "6px",
+                              fontSize: "11px",
+                              fontWeight: "700",
+                              color: "var(--accent-ml)",
+                              cursor: "pointer",
+                              transition: "all 0.15s",
+                              whiteSpace: "nowrap"
+                            }}
+                            className="research-btn"
+                          >
+                            Research 🔬
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -248,23 +298,34 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
                     </span>
                   </div>
 
-                  {/* Middle Row: Metrics Grid */}
+                    {/* Middle Row: Metrics Grid */}
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "6px", background: "rgba(0,0,0,0.015)", padding: "8px", borderRadius: "8px", textAlign: "center" }}>
                     <div>
-                      <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>POP</div>
-                      <div style={{ fontSize: "clamp(11px, 3.2vw, 13px)", fontWeight: "800", color: "#10b981", marginTop: "2px" }}>{opp.pop}%</div>
+                      <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>POP / YIELD</div>
+                      <div style={{ fontSize: "clamp(11px, 3.2vw, 13px)", fontWeight: "800", color: "#10b981", marginTop: "2px" }}>
+                        {opp.pop}% • {opp.expected_yield.toFixed(1)}%
+                      </div>
                     </div>
                     <div>
-                      <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>YIELD</div>
-                      <div style={{ fontSize: "clamp(11px, 3.2vw, 13px)", fontWeight: "800", color: "var(--color-text-primary)", marginTop: "2px" }}>{opp.expected_yield.toFixed(2)}%</div>
+                      <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>LOT / EXPIRY</div>
+                      <div style={{ fontSize: "clamp(10px, 3vw, 12px)", fontWeight: "800", color: "var(--color-text-primary)", marginTop: "2px" }}>
+                        {opp.lot_size ? `${opp.lot_size}` : "—"} {opp.expiry_formatted ? `• ${opp.expiry_formatted.split(" ").slice(0, 2).join(" ")}` : ""}
+                      </div>
                     </div>
                     <div>
-                      <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>SPOT PRICE</div>
-                      <div style={{ fontSize: "clamp(11px, 3.2vw, 13px)", fontWeight: "800", color: "var(--color-text-primary)", marginTop: "2px" }}>₹{opp.price.toLocaleString("en-IN", { maximumFractionDigits: 1 })}</div>
+                      <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>SPOT / FUT</div>
+                      <div style={{ fontSize: "clamp(10px, 3vw, 12px)", fontWeight: "800", color: "var(--color-text-primary)", marginTop: "2px" }}>
+                        ₹{opp.price.toLocaleString("en-IN", { maximumFractionDigits: 1 })}
+                        {typeof opp.futures_price === "number" && (
+                          <span style={{ display: "block", fontSize: "9.5px", color: "var(--accent-ml)" }}>
+                            F: ₹{opp.futures_price.toLocaleString("en-IN", { maximumFractionDigits: 1 })}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Bottom Row: Strategy Setup & Research Button */}
+                  {/* Bottom Row: Strategy Setup & Actions */}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
                     <div style={{ minWidth: 0 }}>
                       {opp.strategy_type === "sell_call" ? (
@@ -283,22 +344,58 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
                         </div>
                       )}
                     </div>
-                    <button
-                      className="research-btn"
-                      style={{
-                        background: "none",
-                        border: "1px solid var(--border-subtle)",
-                        padding: "6px 12px",
-                        borderRadius: "6px",
-                        fontSize: "11px",
-                        fontWeight: "700",
-                        color: "var(--accent-ml)",
-                        cursor: "pointer",
-                        transition: "all 0.15s"
-                      }}
-                    >
-                      Research 🔬
-                    </button>
+                    <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (typeof window !== "undefined") {
+                            window.dispatchEvent(
+                              new CustomEvent("open-futures-trade", {
+                                detail: {
+                                  ticker: opp.ticker,
+                                  side: opp.strategy_type === "sell_call" ? "SELL" : "BUY",
+                                  lots: 1,
+                                },
+                              })
+                            );
+                          }
+                        }}
+                        style={{
+                          background: "rgba(79, 70, 229, 0.1)",
+                          border: "1px solid rgba(79, 70, 229, 0.35)",
+                          padding: "6px 10px",
+                          borderRadius: "6px",
+                          fontSize: "11px",
+                          fontWeight: "800",
+                          color: "var(--accent-ml)",
+                          cursor: "pointer"
+                        }}
+                      >
+                        ⚡ Trade FUT
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRowClick(opp.ticker);
+                        }}
+                        className="research-btn"
+                        style={{
+                          background: "none",
+                          border: "1px solid var(--border-subtle)",
+                          padding: "6px 12px",
+                          borderRadius: "6px",
+                          fontSize: "11px",
+                          fontWeight: "700",
+                          color: "var(--accent-ml)",
+                          cursor: "pointer",
+                          transition: "all 0.15s"
+                        }}
+                      >
+                        Research 🔬
+                      </button>
+                    </div>
                   </div>
                 </div>
               );

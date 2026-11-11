@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { 
   executePaperOrder, 
@@ -39,6 +39,8 @@ export default function TradeModal({
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const submittingRef = useRef<boolean>(false);
+  const idempotencyKeyRef = useRef<string>("");
 
   const effectiveUserId = userId || getPaperUserId();
   const activeUser = PAPER_TRADING_USERS.find(u => u.id === effectiveUserId) || getActiveTradingUser();
@@ -48,6 +50,8 @@ export default function TradeModal({
       setOrderType(initialOrderType);
       setQuantity(1);
       setConfirming(false);
+      submittingRef.current = false;
+      idempotencyKeyRef.current = `EQ-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
       setError(null);
       setSuccessMsg(null);
     }
@@ -63,10 +67,15 @@ export default function TradeModal({
   const maxBuyShares = currentPrice > 0 ? Math.floor(availableCash / currentPrice) : 0;
   const maxSellShares = ownedQuantity;
 
+  const refreshIdempotency = () => {
+    idempotencyKeyRef.current = `EQ-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  };
+
   const handleQuickQuantity = (qty: number) => {
     setQuantity(Math.max(1, qty));
     setError(null);
     setConfirming(false);
+    refreshIdempotency();
   };
 
   const handlePercentageQuantity = (pct: number) => {
@@ -79,9 +88,12 @@ export default function TradeModal({
     }
     setError(null);
     setConfirming(false);
+    refreshIdempotency();
   };
 
   const handleExecute = async () => {
+    if (submittingRef.current || loading) return;
+
     if (quantity <= 0) {
       setError("Please enter a valid quantity of at least 1 share.");
       return;
@@ -102,10 +114,11 @@ export default function TradeModal({
       return;
     }
 
+    submittingRef.current = true;
     setLoading(true);
     setError(null);
     try {
-      const res = await executePaperOrder(effectiveUserId, ticker, orderType, quantity);
+      const res = await executePaperOrder(effectiveUserId, ticker, orderType, quantity, idempotencyKeyRef.current);
       setSuccessMsg(`Simulated ${orderType} order for ${quantity} shares of ${ticker} executed successfully for ${activeUser.name}!`);
 
       if (typeof window !== "undefined") {
@@ -128,6 +141,7 @@ export default function TradeModal({
       setError(err?.message || "Failed to execute paper trade");
       setConfirming(false);
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -224,7 +238,7 @@ export default function TradeModal({
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
           <button
             type="button"
-            onClick={() => { setOrderType("BUY"); setConfirming(false); setError(null); }}
+            onClick={() => { setOrderType("BUY"); setConfirming(false); setError(null); refreshIdempotency(); }}
             style={{
               padding: "12px",
               borderRadius: "10px",
@@ -247,7 +261,7 @@ export default function TradeModal({
           </button>
           <button
             type="button"
-            onClick={() => { setOrderType("SELL"); setConfirming(false); setError(null); }}
+            onClick={() => { setOrderType("SELL"); setConfirming(false); setError(null); refreshIdempotency(); }}
             style={{
               padding: "12px",
               borderRadius: "10px",
@@ -333,6 +347,7 @@ export default function TradeModal({
                 setQuantity(isNaN(val) ? 1 : Math.max(1, val));
                 setError(null);
                 setConfirming(false);
+                refreshIdempotency();
               }}
               style={{
                 flex: 1,

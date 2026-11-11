@@ -301,10 +301,58 @@ export interface FuturesOpportunity {
   pop: number;
   expected_yield: number;
   price: number;
+  futures_price?: number;
+  exchange?: string;
+  expiry_date?: string;
+  expiry_formatted?: string;
+  lot_size?: number;
+  margin_per_lot?: number;
   future_contract: string;
   option_contract: string;
   expected_return: number;
   strategy_type?: string;
+}
+
+export interface FuturesExpiryOption {
+  series: string;
+  expiry_date: string;
+  expiry_formatted: string;
+  month_label: string;
+  year_short: string;
+  days_to_expiry: number;
+  contract_symbol: string;
+  short_contract: string;
+  futures_price: number;
+  margin_per_lot: number;
+}
+
+export interface FuturesContractSpec {
+  ticker: string;
+  display_symbol: string;
+  sector?: string;
+  exchange: string;
+  instrument: string;
+  spot_price: number;
+  futures_price: number;
+  basis: number;
+  basis_pct: number;
+  contract_symbol: string;
+  short_contract: string;
+  expiry_date: string;
+  expiry_formatted: string;
+  month_label: string;
+  days_to_expiry: number;
+  lot_size: number;
+  lots: number;
+  total_quantity: number;
+  margin_pct: number;
+  margin_pct_display: number;
+  margin_per_lot: number;
+  value_per_lot: number;
+  required_margin: number;
+  estimated_trade_value: number;
+  tick_size: number;
+  available_expiries: FuturesExpiryOption[];
 }
 
 export interface FuturesAgentDetail {
@@ -369,7 +417,15 @@ export interface FuturesDetail {
   ticker: string;
   strategy_score: number;
   spot_price: number;
+  futures_price?: number;
+  exchange?: string;
   lot_size: number;
+  futures_expiry?: string;
+  futures_expiry_formatted?: string;
+  futures_contract?: string;
+  futures_required_margin?: number;
+  futures_trade_value?: number;
+  futures_contract_spec?: FuturesContractSpec;
   margin_blocked: number;
   agents: {
     market_regime: FuturesAgentDetail;
@@ -432,6 +488,37 @@ export async function fetchFuturesDetail(ticker: string): Promise<FuturesDetail>
     headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
   });
   if (!res.ok) throw new Error("Failed to fetch futures detail");
+  return res.json();
+}
+
+export async function fetchFuturesContracts(): Promise<{
+  exchange: string;
+  default_margin_pct: number;
+  expiries: FuturesExpiryOption[];
+  contracts: FuturesContractSpec[];
+}> {
+  const res = await fetch(`${getApiBase()}/api/futures/contracts`, {
+    cache: "no-store",
+    headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+  });
+  if (!res.ok) throw new Error("Failed to fetch Futures contracts");
+  return res.json();
+}
+
+export async function fetchFuturesContract(
+  ticker: string,
+  lots = 1,
+  expiryDate?: string
+): Promise<FuturesContractSpec> {
+  let url = `${getApiBase()}/api/futures/contract/${encodeURIComponent(ticker.toUpperCase())}?lots=${Math.max(1, lots)}`;
+  if (expiryDate) {
+    url += `&expiry_date=${encodeURIComponent(expiryDate)}`;
+  }
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+  });
+  if (!res.ok) throw new Error(`Failed to fetch Futures contract for ${ticker}`);
   return res.json();
 }
 
@@ -611,20 +698,95 @@ export interface PaperHolding {
   day_change_pct: number;
 }
 
+export interface FuturesPosition {
+  id: string;
+  user_id: string;
+  ticker: string;
+  sector?: string;
+  contract_symbol: string;
+  expiry_date: string;
+  expiry_formatted: string;
+  exchange: string;
+  side: "BUY" | "SELL";
+  order_mode: "MARKET" | "LIMIT";
+  lot_size: number;
+  lots: number;
+  total_quantity: number;
+  entry_price: number;
+  current_spot_price: number;
+  current_futures_price: number;
+  trade_value: number;
+  margin_blocked: number;
+  margin_pct: number;
+  unrealized_pnl: number;
+  unrealized_pnl_pct: number;
+  realized_pnl: number;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PendingFuturesOrder {
+  id: string;
+  ticker: string;
+  contract_symbol: string;
+  expiry_date: string;
+  expiry_formatted: string;
+  exchange: string;
+  side: "BUY" | "SELL";
+  order_mode: string;
+  lot_size: number;
+  lots: number;
+  total_quantity: number;
+  limit_price: number;
+  current_futures_price: number;
+  margin_blocked: number;
+  status: string;
+  created_at: string;
+}
+
+export interface ClosedFuturesPosition {
+  id: string;
+  ticker: string;
+  contract_symbol: string;
+  expiry_date: string;
+  expiry_formatted: string;
+  exchange: string;
+  side: "BUY" | "SELL";
+  lot_size: number;
+  lots: number;
+  total_quantity: number;
+  entry_price: number;
+  exit_price: number;
+  margin_blocked: number;
+  realized_pnl: number;
+  status: string;
+  created_at: string;
+  closed_at: string;
+}
+
 export interface PaperAccount {
   user_id: string;
   user_name?: string;
   initial_capital: number;
   available_cash: number;
+  equity_invested?: number;
   total_invested: number;
   portfolio_market_value: number;
   total_portfolio_value: number;
   realized_pnl: number;
   unrealized_pnl: number;
+  equity_unrealized_pnl?: number;
+  futures_margin_blocked?: number;
+  futures_unrealized_pnl?: number;
   total_pnl: number;
   total_pnl_pct: number;
   holdings: PaperHolding[];
   holdings_count: number;
+  futures_positions?: FuturesPosition[];
+  futures_count?: number;
+  pending_futures_orders?: PendingFuturesOrder[];
+  closed_futures_positions?: ClosedFuturesPosition[];
   is_simulated: boolean;
   last_updated: string;
   last_updated_formatted: string;
@@ -636,14 +798,23 @@ export interface PaperTransaction {
   id: string;
   user_id: string;
   ticker: string;
-  order_type: "BUY" | "SELL" | "RESET";
+  order_type: "BUY" | "SELL" | "RESET" | "FUTURES_BUY" | "FUTURES_SELL" | "FUTURES_CLOSE" | string;
+  instrument_type?: "EQUITY" | "FUTURES" | "SYSTEM" | string;
+  side?: "BUY" | "SELL" | string;
   quantity: number;
+  lots?: number;
+  lot_size?: number;
+  expiry_date?: string;
+  contract_symbol?: string;
   execution_price: number;
   total_amount: number;
+  margin_used?: number;
   realized_pnl: number;
   timestamp: string;
   formatted_time: string;
   status: string;
+  order_mode?: string;
+  position_id?: string;
   notes?: string;
 }
 
@@ -682,7 +853,7 @@ export function getActiveTradingUser(): TradingUser {
 }
 
 export function setActiveTradingUserId(userId: string): TradingUser {
-  let mappedId = userId === "usr_ravindra" ? "usr_rahul" : userId;
+  const mappedId = userId === "usr_ravindra" ? "usr_rahul" : userId;
   const found = PAPER_TRADING_USERS.find(u => u.id === mappedId) || PAPER_TRADING_USERS[0];
   if (typeof window !== "undefined") {
     try {
@@ -782,10 +953,27 @@ export async function fetchPaperAccount(userId?: string): Promise<PaperAccount> 
     }
     const serverAcc: PaperAccount = await res.json();
 
-    // If serverless container was recycled and returned empty holdings,
-    // restore from local persisted snapshot if available
+    // If serverless container was recycled and returned completely empty state,
+    // restore from local persisted snapshot if available (equity OR futures)
+    const serverEmpty =
+      (!serverAcc.holdings || serverAcc.holdings.length === 0) &&
+      (!serverAcc.futures_positions || serverAcc.futures_positions.length === 0) &&
+      (!serverAcc.pending_futures_orders || serverAcc.pending_futures_orders.length === 0) &&
+      serverAcc.realized_pnl === 0 &&
+      Math.abs(serverAcc.available_cash - serverAcc.initial_capital) < 0.01;
+
     const localAcc = getLocalPaperAccount(uid);
-    if ((!serverAcc.holdings || serverAcc.holdings.length === 0) && localAcc && localAcc.holdings && localAcc.holdings.length > 0) {
+    const localHasData = Boolean(
+      localAcc &&
+      (
+        (localAcc.holdings && localAcc.holdings.length > 0) ||
+        (localAcc.futures_positions && localAcc.futures_positions.length > 0) ||
+        (localAcc.pending_futures_orders && localAcc.pending_futures_orders.length > 0) ||
+        (localAcc.realized_pnl !== 0)
+      )
+    );
+
+    if (serverEmpty && localAcc && localHasData) {
       const localTxs = getLocalPaperTransactions(uid);
       const syncedAcc = await syncPaperAccountWithBackend(uid, localAcc, localTxs);
       saveLocalPaperAccount(uid, syncedAcc);
@@ -805,7 +993,8 @@ export async function executePaperOrder(
   userId: string,
   ticker: string,
   orderType: "BUY" | "SELL",
-  quantity: number
+  quantity: number,
+  idempotencyKey?: string
 ): Promise<{ success: boolean; order: any; account: PaperAccount }> {
   const uid = userId || getPaperUserId();
   const res = await fetch(`${getApiBase()}/api/paper-trading/order`, {
@@ -818,7 +1007,8 @@ export async function executePaperOrder(
       user_id: uid,
       ticker: ticker.toUpperCase(),
       order_type: orderType.toUpperCase(),
-      quantity
+      quantity,
+      idempotency_key: idempotencyKey
     })
   });
   const data = await res.json();
@@ -831,9 +1021,101 @@ export async function executePaperOrder(
   return data;
 }
 
+export async function executeFuturesOrder(
+  userId: string,
+  ticker: string,
+  side: "BUY" | "SELL",
+  lots: number,
+  orderType: "MARKET" | "LIMIT" = "MARKET",
+  limitPrice?: number,
+  expiryDate?: string,
+  idempotencyKey?: string
+): Promise<{ success: boolean; order: any; account: PaperAccount }> {
+  const uid = userId || getPaperUserId();
+  const res = await fetch(`${getApiBase()}/api/paper-trading/futures/order`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-cache"
+    },
+    body: JSON.stringify({
+      user_id: uid,
+      ticker: ticker.toUpperCase(),
+      side: side.toUpperCase(),
+      lots,
+      order_type: orderType.toUpperCase(),
+      limit_price: orderType === "LIMIT" ? limitPrice : undefined,
+      expiry_date: expiryDate,
+      idempotency_key: idempotencyKey
+    })
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.detail || data.message || "Failed to execute Futures paper order");
+  }
+  if (data?.account) {
+    saveLocalPaperAccount(uid, data.account);
+  }
+  return data;
+}
+
+export async function closeFuturesPosition(
+  userId: string,
+  positionId: string,
+  idempotencyKey?: string
+): Promise<{ success: boolean; order: any; account: PaperAccount }> {
+  const uid = userId || getPaperUserId();
+  const res = await fetch(`${getApiBase()}/api/paper-trading/futures/close`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-cache"
+    },
+    body: JSON.stringify({
+      user_id: uid,
+      position_id: positionId,
+      idempotency_key: idempotencyKey
+    })
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.detail || data.message || "Failed to close Futures position");
+  }
+  if (data?.account) {
+    saveLocalPaperAccount(uid, data.account);
+  }
+  return data;
+}
+
+export async function cancelFuturesOrder(
+  userId: string,
+  positionId: string
+): Promise<{ success: boolean; cancel: any; account: PaperAccount }> {
+  const uid = userId || getPaperUserId();
+  const res = await fetch(`${getApiBase()}/api/paper-trading/futures/cancel`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-cache"
+    },
+    body: JSON.stringify({
+      user_id: uid,
+      position_id: positionId
+    })
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.detail || data.message || "Failed to cancel pending Futures order");
+  }
+  if (data?.account) {
+    saveLocalPaperAccount(uid, data.account);
+  }
+  return data;
+}
+
 export async function fetchPaperTransactions(
   userId?: string,
-  orderType?: "BUY" | "SELL"
+  orderType?: "BUY" | "SELL" | "FUTURES"
 ): Promise<PaperTransaction[]> {
   const uid = userId || getPaperUserId();
   let url = `${getApiBase()}/api/paper-trading/transactions?user_id=${encodeURIComponent(uid)}`;
@@ -855,11 +1137,135 @@ export async function fetchPaperTransactions(
     return data;
   } catch (err) {
     const cached = getLocalPaperTransactions(uid);
+    if (orderType === "FUTURES") {
+      return cached.filter(t => t.instrument_type === "FUTURES" || (t.order_type || "").startsWith("FUTURES"));
+    }
     if (orderType) {
-      return cached.filter(t => t.order_type === orderType);
+      return cached.filter(t => t.order_type === orderType || t.order_type === `FUTURES_${orderType}`);
     }
     return cached;
   }
+}
+
+// ==========================================
+// PER-USER WATCHLIST API (DB + LOCAL CACHE)
+// ==========================================
+
+const WATCHLIST_STORAGE_PREFIX = "vanguard_watchlist_v1_";
+const WATCHLIST_CUSTOM_PREFIX = "vanguard_wl_customized_v2_";
+const DEFAULT_WATCHLIST_TICKERS = ["RELIANCE", "TCS", "HDFCBANK", "INFYS", "TATAMOTORS"];
+
+export function getLocalWatchlistTickers(userId: string): string[] {
+  if (typeof window === "undefined") return DEFAULT_WATCHLIST_TICKERS;
+  const uid = userId || DEFAULT_PAPER_USER_ID;
+  try {
+    const raw = window.localStorage.getItem(`${WATCHLIST_STORAGE_PREFIX}${uid}`);
+    if (raw !== null) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((t): t is string => typeof t === "string" && t.length > 0);
+      }
+    }
+  } catch (err) {
+    console.error("Failed to read watchlist from localStorage:", err);
+  }
+  return DEFAULT_WATCHLIST_TICKERS;
+}
+
+export function saveLocalWatchlistTickers(userId: string, tickers: string[], markCustomized = false): void {
+  if (typeof window === "undefined") return;
+  const uid = userId || DEFAULT_PAPER_USER_ID;
+  try {
+    window.localStorage.setItem(`${WATCHLIST_STORAGE_PREFIX}${uid}`, JSON.stringify(tickers));
+    if (markCustomized) {
+      window.localStorage.setItem(`${WATCHLIST_CUSTOM_PREFIX}${uid}`, "1");
+    }
+  } catch (err) {
+    console.error("Failed to save watchlist to localStorage:", err);
+  }
+}
+
+function isSameList(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+export async function fetchWatchlist(userId: string): Promise<string[]> {
+  const uid = userId || getPaperUserId();
+  try {
+    const res = await fetch(`${getApiBase()}/api/watchlist?user_id=${encodeURIComponent(uid)}`, {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+    });
+    if (!res.ok) throw new Error(`Failed to fetch watchlist (${res.status})`);
+    const data = await res.json();
+    const serverTickers: string[] = Array.isArray(data?.tickers) ? data.tickers : [];
+
+    // Restore customized client watchlist if serverless container cold-started to default 5
+    if (typeof window !== "undefined") {
+      const isCustomized = window.localStorage.getItem(`${WATCHLIST_CUSTOM_PREFIX}${uid}`) === "1";
+      const localTickers = getLocalWatchlistTickers(uid);
+      if (isCustomized && isSameList(serverTickers, DEFAULT_WATCHLIST_TICKERS) && !isSameList(localTickers, DEFAULT_WATCHLIST_TICKERS)) {
+        return await syncWatchlistWithBackend(uid, localTickers);
+      }
+    }
+
+    saveLocalWatchlistTickers(uid, serverTickers, false);
+    return serverTickers;
+  } catch {
+    return getLocalWatchlistTickers(uid);
+  }
+}
+
+export async function addToWatchlist(userId: string, ticker: string): Promise<string[]> {
+  const uid = userId || getPaperUserId();
+  const sym = ticker.toUpperCase().trim();
+  const res = await fetch(`${getApiBase()}/api/watchlist/add`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
+    body: JSON.stringify({ user_id: uid, ticker: sym })
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.detail || "Failed to add stock to watchlist");
+  }
+  const tickers: string[] = Array.isArray(data?.tickers) ? data.tickers : [];
+  saveLocalWatchlistTickers(uid, tickers, true);
+  return tickers;
+}
+
+export async function removeFromWatchlist(userId: string, ticker: string): Promise<string[]> {
+  const uid = userId || getPaperUserId();
+  const sym = ticker.toUpperCase().trim();
+  const res = await fetch(`${getApiBase()}/api/watchlist/remove`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
+    body: JSON.stringify({ user_id: uid, ticker: sym })
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.detail || "Failed to remove stock from watchlist");
+  }
+  const tickers: string[] = Array.isArray(data?.tickers) ? data.tickers : [];
+  saveLocalWatchlistTickers(uid, tickers, true);
+  return tickers;
+}
+
+export async function syncWatchlistWithBackend(userId: string, tickers: string[]): Promise<string[]> {
+  const uid = userId || getPaperUserId();
+  const res = await fetch(`${getApiBase()}/api/watchlist/sync`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
+    body: JSON.stringify({ user_id: uid, tickers })
+  });
+  if (!res.ok) return tickers;
+  const data = await res.json();
+  const synced: string[] = Array.isArray(data?.tickers) ? data.tickers : tickers;
+  saveLocalWatchlistTickers(uid, synced, true);
+  return synced;
 }
 
 export async function resetPaperAccount(userId?: string): Promise<{ success: boolean; message: string; account: PaperAccount }> {

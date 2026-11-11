@@ -421,6 +421,17 @@ button.primary:hover {
   display: flex;
 }
 
+.desktop-subtabs-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 0 8px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
 .mobile-only-flex {
   display: none !important;
 }
@@ -443,6 +454,9 @@ button.primary:hover {
 
 @media (max-width: 767.98px) {
   .desktop-tab-container {
+    display: none !important;
+  }
+  .desktop-subtabs-bar {
     display: none !important;
   }
   .desktop-only-flex {

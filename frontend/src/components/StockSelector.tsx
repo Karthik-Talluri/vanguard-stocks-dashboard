@@ -159,9 +159,30 @@ export default function StockSelector({ stocks, selectedTicker, onSelect }: Stoc
                           border: "1px solid var(--color-buy)",
                           cursor: "pointer"
                         }}
-                        title="Buy in Paper Trading"
+                        title="Buy Equity in Paper Trading"
                       >
                         BUY
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (typeof window !== "undefined") {
+                            window.dispatchEvent(new CustomEvent("open-futures-trade", { detail: { ticker: stock.ticker, side: "BUY", lots: 1 } }));
+                          }
+                        }}
+                        style={{
+                          padding: "2px 5px",
+                          borderRadius: "4px",
+                          fontSize: "9px",
+                          fontWeight: "800",
+                          background: "rgba(79, 70, 229, 0.12)",
+                          color: "var(--accent-ml)",
+                          border: "1px solid rgba(79, 70, 229, 0.45)",
+                          cursor: "pointer"
+                        }}
+                        title="Trade NSE Futures in Paper Trading"
+                      >
+                        FUT
                       </button>
                     </div>
                   </div>
