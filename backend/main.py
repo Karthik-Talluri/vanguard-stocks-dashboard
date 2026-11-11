@@ -1359,6 +1359,8 @@ class PaperTradeOrderRequest(BaseModel):
     order_type: str  # "BUY" or "SELL"
     quantity: int
     idempotency_key: Optional[str] = None
+    client_account: Optional[Dict[str, Any]] = None
+    client_transactions: Optional[List[Dict[str, Any]]] = None
 
 class FuturesOrderRequest(BaseModel):
     user_id: str = "usr_karthik"
@@ -1369,15 +1371,21 @@ class FuturesOrderRequest(BaseModel):
     limit_price: Optional[float] = None
     expiry_date: Optional[str] = None
     idempotency_key: Optional[str] = None
+    client_account: Optional[Dict[str, Any]] = None
+    client_transactions: Optional[List[Dict[str, Any]]] = None
 
 class FuturesCloseRequest(BaseModel):
     user_id: str = "usr_karthik"
     position_id: str
     idempotency_key: Optional[str] = None
+    client_account: Optional[Dict[str, Any]] = None
+    client_transactions: Optional[List[Dict[str, Any]]] = None
 
 class FuturesCancelRequest(BaseModel):
     user_id: str = "usr_karthik"
     position_id: str
+    client_account: Optional[Dict[str, Any]] = None
+    client_transactions: Optional[List[Dict[str, Any]]] = None
 
 class PaperTradeResetRequest(BaseModel):
     user_id: str = "usr_karthik"
@@ -1386,14 +1394,18 @@ class PaperTradeSyncRequest(BaseModel):
     user_id: str = "usr_karthik"
     account: Optional[Dict[str, Any]] = None
     transactions: Optional[List[Dict[str, Any]]] = None
+    force: bool = False
 
 class WatchlistModifyRequest(BaseModel):
     user_id: str = "usr_karthik"
     ticker: str
+    client_tickers: Optional[List[str]] = None
+    client_updated_at: Optional[str] = None
 
 class WatchlistSyncRequest(BaseModel):
     user_id: str = "usr_karthik"
     tickers: List[str] = []
+    client_updated_at: Optional[str] = None
 
 
 @app.get("/api/paper-trading/users")
@@ -1433,17 +1445,21 @@ def place_paper_order(req: PaperTradeOrderRequest, response: Response = None):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
-    from paper_trading_service import execute_order, get_account_summary
+    from paper_trading_service import execute_order, get_account_summary, get_transactions
     try:
         order_res = execute_order(
             req.user_id, req.ticker, req.order_type, req.quantity,
             idempotency_key=req.idempotency_key,
+            client_account=req.client_account,
+            client_transactions=req.client_transactions,
         )
         account = get_account_summary(req.user_id)
+        txs = get_transactions(req.user_id, limit=100)
         return {
             "success": True,
             "order": order_res,
-            "account": account
+            "account": account,
+            "transactions": txs,
         }
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -1461,7 +1477,7 @@ def place_futures_paper_order(req: FuturesOrderRequest, response: Response = Non
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
-    from paper_trading_service import execute_futures_order, get_account_summary
+    from paper_trading_service import execute_futures_order, get_account_summary, get_transactions
     try:
         order_res = execute_futures_order(
             user_id=req.user_id,
@@ -1472,12 +1488,16 @@ def place_futures_paper_order(req: FuturesOrderRequest, response: Response = Non
             limit_price=req.limit_price,
             expiry_date=req.expiry_date,
             idempotency_key=req.idempotency_key,
+            client_account=req.client_account,
+            client_transactions=req.client_transactions,
         )
         account = get_account_summary(req.user_id)
+        txs = get_transactions(req.user_id, limit=100)
         return {
             "success": True,
             "order": order_res,
-            "account": account
+            "account": account,
+            "transactions": txs,
         }
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -1494,18 +1514,22 @@ def close_futures_paper_position(req: FuturesCloseRequest, response: Response = 
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
-    from paper_trading_service import close_futures_position, get_account_summary
+    from paper_trading_service import close_futures_position, get_account_summary, get_transactions
     try:
         close_res = close_futures_position(
             user_id=req.user_id,
             position_id=req.position_id,
             idempotency_key=req.idempotency_key,
+            client_account=req.client_account,
+            client_transactions=req.client_transactions,
         )
         account = get_account_summary(req.user_id)
+        txs = get_transactions(req.user_id, limit=100)
         return {
             "success": True,
             "order": close_res,
-            "account": account
+            "account": account,
+            "transactions": txs,
         }
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -1522,14 +1546,20 @@ def cancel_futures_paper_order(req: FuturesCancelRequest, response: Response = N
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
-    from paper_trading_service import cancel_futures_order, get_account_summary
+    from paper_trading_service import cancel_futures_order, get_account_summary, get_transactions
     try:
-        cancel_res = cancel_futures_order(req.user_id, req.position_id)
+        cancel_res = cancel_futures_order(
+            req.user_id, req.position_id,
+            client_account=req.client_account,
+            client_transactions=req.client_transactions,
+        )
         account = get_account_summary(req.user_id)
+        txs = get_transactions(req.user_id, limit=100)
         return {
             "success": True,
             "cancel": cancel_res,
-            "account": account
+            "account": account,
+            "transactions": txs,
         }
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -1559,12 +1589,14 @@ def reset_paper_account(req: PaperTradeResetRequest, response: Response = None):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
-    from paper_trading_service import reset_account
+    from paper_trading_service import reset_account, get_transactions
     account = reset_account(req.user_id)
+    txs = get_transactions(req.user_id, limit=100)
     return {
         "success": True,
         "message": "Virtual trading account successfully reset to initial ₹1,00,000 capital.",
-        "account": account
+        "account": account,
+        "transactions": txs,
     }
 
 
@@ -1578,12 +1610,14 @@ def sync_paper_account(req: PaperTradeSyncRequest, response: Response = None):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
-    from paper_trading_service import sync_user_account, normalize_user_id
+    from paper_trading_service import sync_user_account, normalize_user_id, get_transactions
     uid = normalize_user_id(req.user_id)
-    account = sync_user_account(uid, req.account or {}, req.transactions)
+    account = sync_user_account(uid, req.account or {}, req.transactions, force=req.force)
+    txs = get_transactions(uid, limit=100)
     return {
         "success": True,
-        "account": account
+        "account": account,
+        "transactions": txs,
     }
 
 
@@ -1594,9 +1628,9 @@ def get_watchlist(user_id: str = "usr_karthik", response: Response = None):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
-    from paper_trading_service import get_user_watchlist, normalize_user_id
+    from paper_trading_service import get_user_watchlist_state, normalize_user_id
     uid = normalize_user_id(user_id)
-    return {"user_id": uid, "tickers": get_user_watchlist(uid)}
+    return get_user_watchlist_state(uid)
 
 
 @app.post("/api/watchlist/add")
@@ -1604,11 +1638,11 @@ def add_watchlist_ticker(req: WatchlistModifyRequest, response: Response = None)
     """Adds a stock ticker to the user's persisted watchlist."""
     if response:
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    from paper_trading_service import add_user_watchlist, normalize_user_id
+    from paper_trading_service import add_user_watchlist_state, normalize_user_id
     try:
         uid = normalize_user_id(req.user_id)
-        tickers = add_user_watchlist(uid, req.ticker)
-        return {"success": True, "user_id": uid, "tickers": tickers}
+        state = add_user_watchlist_state(uid, req.ticker, req.client_tickers, req.client_updated_at)
+        return {"success": True, **state}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
 
@@ -1618,10 +1652,10 @@ def remove_watchlist_ticker(req: WatchlistModifyRequest, response: Response = No
     """Removes a stock ticker from the user's persisted watchlist."""
     if response:
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    from paper_trading_service import remove_user_watchlist, normalize_user_id
+    from paper_trading_service import remove_user_watchlist_state, normalize_user_id
     uid = normalize_user_id(req.user_id)
-    tickers = remove_user_watchlist(uid, req.ticker)
-    return {"success": True, "user_id": uid, "tickers": tickers}
+    state = remove_user_watchlist_state(uid, req.ticker, req.client_tickers, req.client_updated_at)
+    return {"success": True, **state}
 
 
 @app.post("/api/watchlist/sync")
@@ -1629,10 +1663,10 @@ def sync_watchlist(req: WatchlistSyncRequest, response: Response = None):
     """Synchronizes a user's watchlist with the backend SQLite database."""
     if response:
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    from paper_trading_service import sync_user_watchlist, normalize_user_id
+    from paper_trading_service import sync_user_watchlist_state, normalize_user_id
     uid = normalize_user_id(req.user_id)
-    tickers = sync_user_watchlist(uid, req.tickers)
-    return {"success": True, "user_id": uid, "tickers": tickers}
+    state = sync_user_watchlist_state(uid, req.tickers, req.client_updated_at)
+    return {"success": True, **state}
 
 
 

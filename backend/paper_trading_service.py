@@ -10,7 +10,7 @@ import time
 import uuid
 import sqlite3
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import Dict, Any, List, Optional
 
@@ -61,6 +61,19 @@ def normalize_user_id(user_id: str) -> str:
     return uid
 
 
+def _next_mutation_ts(prev_ts: Optional[str] = None) -> str:
+    """Generates a monotonic IST ISO-8601 timestamp strictly greater than prev_ts."""
+    now_iso = datetime.now(IST).isoformat()
+    prev = (prev_ts or "").strip()
+    if prev and now_iso <= prev:
+        try:
+            dt = datetime.fromisoformat(prev)
+            return (dt + timedelta(microseconds=1)).isoformat()
+        except Exception:
+            pass
+    return now_iso
+
+
 def get_db_path() -> str:
     """Returns persistent SQLite path or fallback to /tmp in serverless environments."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -104,9 +117,11 @@ def init_db():
                     cash REAL NOT NULL DEFAULT 100000.0,
                     realized_pnl REAL NOT NULL DEFAULT 0.0,
                     created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    last_mutation_at TEXT DEFAULT ''
                 )
             """)
+            _ensure_column(cursor, "accounts", "last_mutation_at", "TEXT DEFAULT ''")
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS holdings (
                     user_id TEXT NOT NULL,
@@ -201,9 +216,11 @@ def init_db():
                 CREATE TABLE IF NOT EXISTS watchlist_meta (
                     user_id TEXT PRIMARY KEY,
                     initialized INTEGER NOT NULL DEFAULT 1,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    last_mutation_at TEXT DEFAULT ''
                 )
             """)
+            _ensure_column(cursor, "watchlist_meta", "last_mutation_at", "TEXT DEFAULT ''")
 
             # Pre-seed default accounts for the 10 multi-user profiles
             now_iso = datetime.now(IST).isoformat()
@@ -211,7 +228,7 @@ def init_db():
                 cursor.execute("SELECT user_id FROM accounts WHERE user_id = ?", (u["id"],))
                 if not cursor.fetchone():
                     cursor.execute(
-                        "INSERT INTO accounts (user_id, cash, realized_pnl, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                        "INSERT INTO accounts (user_id, cash, realized_pnl, created_at, updated_at, last_mutation_at) VALUES (?, ?, ?, ?, ?, '')",
                         (u["id"], INITIAL_VIRTUAL_CAPITAL, 0.0, now_iso, now_iso),
                     )
 
@@ -249,23 +266,225 @@ def get_or_create_account(conn: sqlite3.Connection, user_id: str) -> Dict[str, A
     """Ensures an account exists for user_id with initial ₹1,00,000 cash."""
     user_id = normalize_user_id(user_id)
     cursor = conn.cursor()
-    cursor.execute("SELECT user_id, cash, realized_pnl, created_at, updated_at FROM accounts WHERE user_id = ?", (user_id,))
+    cursor.execute(
+        "SELECT user_id, cash, realized_pnl, created_at, updated_at, COALESCE(last_mutation_at, '') as last_mutation_at FROM accounts WHERE user_id = ?",
+        (user_id,),
+    )
     row = cursor.fetchone()
     now_iso = datetime.now(IST).isoformat()
     if not row:
         cursor.execute(
-            "INSERT INTO accounts (user_id, cash, realized_pnl, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO accounts (user_id, cash, realized_pnl, created_at, updated_at, last_mutation_at) VALUES (?, ?, ?, ?, ?, '')",
             (user_id, INITIAL_VIRTUAL_CAPITAL, 0.0, now_iso, now_iso),
         )
-        conn.commit()
+        if not conn.in_transaction:
+            conn.commit()
         return {
             "user_id": user_id,
             "cash": INITIAL_VIRTUAL_CAPITAL,
             "realized_pnl": 0.0,
             "created_at": now_iso,
             "updated_at": now_iso,
+            "last_mutation_at": "",
         }
     return dict(row)
+
+
+def _reconcile_client_snapshot_in_tx(
+    conn: sqlite3.Connection,
+    cursor: sqlite3.Cursor,
+    user_id: str,
+    client_account: Optional[Dict[str, Any]],
+    client_transactions: Optional[List[Dict[str, Any]]] = None,
+    required_position_id: Optional[str] = None,
+    force: bool = False,
+) -> Dict[str, Any]:
+    """
+    Reconciles a cold or behind serverless SQLite container against the browser's
+    last confirmed backend snapshot inside an active transaction.
+    Never overwrites a server container whose last_mutation_at is >= client_account.state_updated_at
+    unless required_position_id is missing on an untouched container.
+    """
+    account = get_or_create_account(conn, user_id)
+    if not isinstance(client_account, dict):
+        return account
+
+    server_ts = str(account.get("last_mutation_at") or "").strip()
+    client_ts = str(client_account.get("state_updated_at") or "").strip()
+
+    client_holdings = client_account.get("holdings", []) or []
+    client_futures = client_account.get("futures_positions", []) or []
+    client_pending_futures = client_account.get("pending_futures_orders", []) or []
+    client_closed_futures = client_account.get("closed_futures_positions", []) or []
+    client_cash = float(client_account.get("available_cash", INITIAL_VIRTUAL_CAPITAL))
+    client_realized = float(client_account.get("realized_pnl", 0.0))
+
+    cursor.execute("SELECT COUNT(*) as cnt FROM holdings WHERE user_id = ?", (user_id,))
+    server_holdings_count = int(cursor.fetchone()["cnt"])
+    cursor.execute("SELECT COUNT(*) as cnt FROM futures_positions WHERE user_id = ?", (user_id,))
+    server_futures_count = int(cursor.fetchone()["cnt"])
+
+    has_client_data = bool(
+        len(client_holdings) > 0
+        or len(client_futures) > 0
+        or len(client_pending_futures) > 0
+        or len(client_closed_futures) > 0
+        or abs(client_cash - INITIAL_VIRTUAL_CAPITAL) > 0.01
+        or abs(client_realized) > 0.01
+    )
+
+    server_looks_untouched = bool(
+        not server_ts
+        and server_holdings_count == 0
+        and server_futures_count == 0
+        and abs(float(account["cash"]) - INITIAL_VIRTUAL_CAPITAL) < 0.01
+        and abs(float(account["realized_pnl"])) < 0.01
+    )
+
+    missing_required = False
+    if required_position_id and (not server_ts or not client_ts or client_ts >= server_ts):
+        cursor.execute(
+            "SELECT 1 FROM futures_positions WHERE id = ? AND user_id = ?",
+            (required_position_id, user_id),
+        )
+        if not cursor.fetchone():
+            client_pos_ids = {
+                str(fp.get("id") or "")
+                for fp in (list(client_futures) + list(client_pending_futures) + list(client_closed_futures))
+            }
+            if required_position_id in client_pos_ids:
+                missing_required = True
+
+    client_is_newer = bool(client_ts and (not server_ts or client_ts > server_ts))
+    should_reconcile = bool(
+        force
+        or client_is_newer
+        or (server_looks_untouched and has_client_data)
+        or missing_required
+    )
+    if not should_reconcile:
+        return account
+
+    now_dt = datetime.now(IST)
+    applied_ts = client_ts or _next_mutation_ts(server_ts)
+
+    cursor.execute("""
+        INSERT INTO accounts (user_id, cash, realized_pnl, created_at, updated_at, last_mutation_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            cash = excluded.cash,
+            realized_pnl = excluded.realized_pnl,
+            updated_at = excluded.updated_at,
+            last_mutation_at = excluded.last_mutation_at
+    """, (user_id, client_cash, client_realized, applied_ts, applied_ts, applied_ts))
+
+    cursor.execute("DELETE FROM holdings WHERE user_id = ?", (user_id,))
+    for h in client_holdings:
+        t = str(h.get("ticker", "")).upper().strip()
+        q = int(h.get("quantity", 0))
+        avg_p = float(h.get("avg_buy_price", 0.0))
+        tot_inv = float(h.get("total_invested", q * avg_p))
+        if t and q > 0:
+            cursor.execute("""
+                INSERT INTO holdings (user_id, ticker, quantity, avg_buy_price, total_invested, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (user_id, t, q, avg_p, tot_inv, applied_ts))
+
+    cursor.execute("DELETE FROM futures_positions WHERE user_id = ?", (user_id,))
+    all_client_futures = list(client_futures) + list(client_pending_futures) + list(client_closed_futures)
+    for fp in all_client_futures:
+        fp_id = str(fp.get("id") or f"FUT-{uuid.uuid4().hex[:10].upper()}")
+        t = str(fp.get("ticker", "")).upper().strip()
+        if not t:
+            continue
+        cursor.execute("""
+            INSERT OR REPLACE INTO futures_positions (
+                id, user_id, ticker, contract_symbol, expiry_date, expiry_formatted,
+                exchange, side, order_mode, lot_size, lots, total_quantity,
+                entry_price, limit_price, trade_value, margin_blocked, margin_pct,
+                status, exit_price, realized_pnl, created_at, updated_at, closed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            fp_id, user_id, t,
+            fp.get("contract_symbol", f"{t} FUT"),
+            fp.get("expiry_date", ""),
+            fp.get("expiry_formatted", ""),
+            fp.get("exchange", "NSE"),
+            fp.get("side", "BUY"),
+            fp.get("order_mode", "MARKET"),
+            int(fp.get("lot_size", 1)),
+            int(fp.get("lots", 1)),
+            int(fp.get("total_quantity", 1)),
+            float(fp.get("entry_price", fp.get("limit_price", 0.0))),
+            fp.get("limit_price"),
+            float(fp.get("trade_value", 0.0)),
+            float(fp.get("margin_blocked", 0.0)),
+            float(fp.get("margin_pct", 0.05)),
+            fp.get("status", "OPEN"),
+            fp.get("exit_price"),
+            float(fp.get("realized_pnl", 0.0)),
+            fp.get("created_at", applied_ts),
+            applied_ts,
+            fp.get("closed_at"),
+        ))
+
+    is_clean_reset_snapshot = bool(
+        len(client_holdings) == 0
+        and len(client_futures) == 0
+        and len(client_pending_futures) == 0
+        and len(client_closed_futures) == 0
+        and abs(client_cash - INITIAL_VIRTUAL_CAPITAL) < 0.01
+        and abs(client_realized) < 0.01
+    )
+    latest_reset_ts = max(
+        (
+            str(tx.get("timestamp") or "")
+            for tx in (client_transactions or [])
+            if str(tx.get("order_type") or "").upper() == "RESET"
+        ),
+        default="",
+    )
+    if is_clean_reset_snapshot and client_is_newer:
+        cursor.execute("DELETE FROM transactions WHERE user_id = ? AND order_type != 'RESET'", (user_id,))
+    elif latest_reset_ts:
+        cursor.execute("DELETE FROM transactions WHERE user_id = ? AND timestamp < ?", (user_id, latest_reset_ts))
+
+    if client_transactions:
+        for tx in client_transactions:
+            tx_id = str(tx.get("id") or f"TX-{uuid.uuid4().hex[:8].upper()}")
+            tx_ticker = str(tx.get("ticker", "")).upper()
+            tx_type = str(tx.get("order_type", "BUY")).upper()
+            tx_qty = int(tx.get("quantity", 0))
+            tx_price = float(tx.get("execution_price", 0.0))
+            tx_tot = float(tx.get("total_amount", tx_qty * tx_price))
+            tx_pnl = float(tx.get("realized_pnl", 0.0))
+            tx_time = tx.get("timestamp", applied_ts)
+            tx_formatted = tx.get("formatted_time", now_dt.strftime("%d %b %Y, %I:%M:%S %p IST"))
+            tx_status = tx.get("status", "EXECUTED")
+            cursor.execute("""
+                INSERT OR IGNORE INTO transactions (
+                    id, user_id, ticker, order_type, instrument_type, side, quantity,
+                    lots, lot_size, expiry_date, contract_symbol, execution_price,
+                    total_amount, margin_used, realized_pnl, timestamp, formatted_time,
+                    status, order_mode, position_id, notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYNC_RESTORED')
+            """, (
+                tx_id, user_id, tx_ticker, tx_type,
+                tx.get("instrument_type", "FUTURES" if "FUTURES" in tx_type else "EQUITY"),
+                tx.get("side"),
+                tx_qty,
+                int(tx.get("lots", 0) or 0),
+                int(tx.get("lot_size", 0) or 0),
+                tx.get("expiry_date"),
+                tx.get("contract_symbol"),
+                tx_price, tx_tot,
+                float(tx.get("margin_used", 0.0) or 0.0),
+                tx_pnl, tx_time, tx_formatted, tx_status,
+                tx.get("order_mode", "MARKET"),
+                tx.get("position_id"),
+            ))
+
+    return get_or_create_account(conn, user_id)
 
 
 def execute_order(
@@ -274,6 +493,8 @@ def execute_order(
     order_type: str,
     quantity: int,
     idempotency_key: Optional[str] = None,
+    client_account: Optional[Dict[str, Any]] = None,
+    client_transactions: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Executes a simulated equity buy or sell market order atomically.
@@ -295,8 +516,6 @@ def execute_order(
 
     total_order_amount = round(quantity * price, 2)
     now_dt = datetime.now(IST)
-    now_iso = now_dt.isoformat()
-    now_formatted = now_dt.strftime("%d %b %Y, %I:%M:%S %p IST")
     order_id = f"ORD-{uuid.uuid4().hex[:10].upper()}"
 
     with _DB_LOCK:
@@ -327,7 +546,11 @@ def execute_order(
                         "message": f"Order already processed ({existing_tx['id']}). Duplicate submission prevented.",
                     }
 
-            account = get_or_create_account(conn, user_id)
+            account = _reconcile_client_snapshot_in_tx(
+                conn, cursor, user_id, client_account, client_transactions
+            )
+            mut_ts = _next_mutation_ts(account.get("last_mutation_at"))
+            mut_formatted = datetime.fromisoformat(mut_ts).strftime("%d %b %Y, %I:%M:%S %p IST")
             current_cash = float(account["cash"])
             current_realized_pnl = float(account["realized_pnl"])
 
@@ -350,8 +573,8 @@ def execute_order(
                 new_avg_price = new_total_invested / new_qty
 
                 cursor.execute(
-                    "UPDATE accounts SET cash = ?, updated_at = ? WHERE user_id = ?",
-                    (new_cash, now_iso, user_id),
+                    "UPDATE accounts SET cash = ?, updated_at = ?, last_mutation_at = ? WHERE user_id = ?",
+                    (new_cash, mut_ts, mut_ts, user_id),
                 )
 
                 cursor.execute("""
@@ -362,7 +585,7 @@ def execute_order(
                         avg_buy_price = excluded.avg_buy_price,
                         total_invested = excluded.total_invested,
                         updated_at = excluded.updated_at
-                """, (user_id, ticker, new_qty, new_avg_price, new_total_invested, now_iso))
+                """, (user_id, ticker, new_qty, new_avg_price, new_total_invested, mut_ts))
 
             elif order_type == "SELL":
                 if current_holding_qty < quantity:
@@ -377,8 +600,8 @@ def execute_order(
                 new_qty = current_holding_qty - quantity
 
                 cursor.execute(
-                    "UPDATE accounts SET cash = ?, realized_pnl = ?, updated_at = ? WHERE user_id = ?",
-                    (new_cash, new_total_realized, now_iso, user_id),
+                    "UPDATE accounts SET cash = ?, realized_pnl = ?, updated_at = ?, last_mutation_at = ? WHERE user_id = ?",
+                    (new_cash, new_total_realized, mut_ts, mut_ts, user_id),
                 )
 
                 if new_qty == 0:
@@ -387,7 +610,7 @@ def execute_order(
                     new_total_invested = new_qty * current_avg_price
                     cursor.execute(
                         "UPDATE holdings SET quantity = ?, total_invested = ?, updated_at = ? WHERE user_id = ? AND ticker = ?",
-                        (new_qty, new_total_invested, now_iso, user_id, ticker),
+                        (new_qty, new_total_invested, mut_ts, user_id, ticker),
                     )
 
             cursor.execute("""
@@ -399,7 +622,7 @@ def execute_order(
             """, (
                 order_id, user_id, ticker, order_type, order_type, quantity,
                 price, total_order_amount, realized_pnl_on_trade,
-                now_iso, now_formatted, idem_key,
+                mut_ts, mut_formatted, idem_key,
             ))
 
             conn.commit()
@@ -415,8 +638,8 @@ def execute_order(
                 "execution_price": round(price, 2),
                 "total_amount": round(total_order_amount, 2),
                 "realized_pnl": round(realized_pnl_on_trade, 2),
-                "timestamp": now_iso,
-                "formatted_time": now_formatted,
+                "timestamp": mut_ts,
+                "formatted_time": mut_formatted,
                 "status": "EXECUTED",
                 "message": f"Successfully simulated {order_type} order for {quantity} shares of {ticker} at ₹{price:,.2f}",
             }
@@ -437,6 +660,8 @@ def execute_futures_order(
     limit_price: Optional[float] = None,
     expiry_date: Optional[str] = None,
     idempotency_key: Optional[str] = None,
+    client_account: Optional[Dict[str, Any]] = None,
+    client_transactions: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Executes or queues a simulated NSE Futures BUY or SELL order with lot size math.
@@ -492,9 +717,6 @@ def execute_futures_order(
     trade_value = round(exec_price * total_quantity, 2)
     required_margin = round(trade_value * margin_pct, 2)
 
-    now_dt = datetime.now(IST)
-    now_iso = now_dt.isoformat()
-    now_formatted = now_dt.strftime("%d %b %Y, %I:%M:%S %p IST")
     position_id = f"FUT-{uuid.uuid4().hex[:10].upper()}"
     order_id = f"FORD-{uuid.uuid4().hex[:10].upper()}"
 
@@ -535,7 +757,11 @@ def execute_futures_order(
                         "message": f"Futures order already processed ({existing_pos['id']}). Duplicate prevented.",
                     }
 
-            account = get_or_create_account(conn, user_id)
+            account = _reconcile_client_snapshot_in_tx(
+                conn, cursor, user_id, client_account, client_transactions
+            )
+            mut_ts = _next_mutation_ts(account.get("last_mutation_at"))
+            mut_formatted = datetime.fromisoformat(mut_ts).strftime("%d %b %Y, %I:%M:%S %p IST")
             current_cash = float(account["cash"])
 
             if current_cash < required_margin:
@@ -545,8 +771,8 @@ def execute_futures_order(
 
             new_cash = round(current_cash - required_margin, 2)
             cursor.execute(
-                "UPDATE accounts SET cash = ?, updated_at = ? WHERE user_id = ?",
-                (new_cash, now_iso, user_id),
+                "UPDATE accounts SET cash = ?, updated_at = ?, last_mutation_at = ? WHERE user_id = ?",
+                (new_cash, mut_ts, mut_ts, user_id),
             )
 
             cursor.execute("""
@@ -560,7 +786,7 @@ def execute_futures_order(
                 position_id, user_id, ticker, spec["contract_symbol"], spec["expiry_date"],
                 spec["expiry_formatted"], spec["exchange"], side, order_type, lot_size,
                 lots, total_quantity, exec_price, parsed_limit_price, trade_value,
-                required_margin, margin_pct, pos_status, idem_key, now_iso, now_iso,
+                required_margin, margin_pct, pos_status, idem_key, mut_ts, mut_ts,
             ))
 
             tx_order_type = f"FUTURES_{side}"
@@ -574,7 +800,7 @@ def execute_futures_order(
             """, (
                 order_id, user_id, ticker, tx_order_type, side, total_quantity,
                 lots, lot_size, spec["expiry_date"], spec["contract_symbol"], exec_price,
-                required_margin, required_margin, now_iso, now_formatted,
+                required_margin, required_margin, mut_ts, mut_formatted,
                 tx_status, order_type, idem_key, position_id,
                 f"{spec['contract_symbol']} | {lots} lot(s) x {lot_size} = {total_quantity} qty | Value ₹{trade_value:,.2f}",
             ))
@@ -606,8 +832,8 @@ def execute_futures_order(
                 "limit_price": parsed_limit_price,
                 "required_margin": required_margin,
                 "trade_value": trade_value,
-                "timestamp": now_iso,
-                "formatted_time": now_formatted,
+                "timestamp": mut_ts,
+                "formatted_time": mut_formatted,
                 "status": tx_status,
                 "position_status": pos_status,
                 "message": msg,
@@ -624,6 +850,8 @@ def close_futures_position(
     user_id: str,
     position_id: str,
     idempotency_key: Optional[str] = None,
+    client_account: Optional[Dict[str, Any]] = None,
+    client_transactions: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Closes an individual open Futures position at the live Futures price,
@@ -636,9 +864,6 @@ def close_futures_position(
     if not position_id:
         raise ValueError("position_id is required to close a Futures position.")
 
-    now_dt = datetime.now(IST)
-    now_iso = now_dt.isoformat()
-    now_formatted = now_dt.strftime("%d %b %Y, %I:%M:%S %p IST")
     order_id = f"FCLS-{uuid.uuid4().hex[:10].upper()}"
 
     with _DB_LOCK:
@@ -662,6 +887,11 @@ def close_futures_position(
                         "status": existing_tx["status"],
                         "message": "Futures close already executed.",
                     }
+
+            account = _reconcile_client_snapshot_in_tx(
+                conn, cursor, user_id, client_account, client_transactions,
+                required_position_id=position_id,
+            )
 
             cursor.execute(
                 "SELECT * FROM futures_positions WHERE id = ? AND user_id = ?",
@@ -708,7 +938,8 @@ def close_futures_position(
                 realized_pnl = round((entry_price - exit_price) * total_qty, 2)
                 close_side = "BUY"
 
-            account = get_or_create_account(conn, user_id)
+            mut_ts = _next_mutation_ts(account.get("last_mutation_at"))
+            mut_formatted = datetime.fromisoformat(mut_ts).strftime("%d %b %Y, %I:%M:%S %p IST")
             current_cash = float(account["cash"])
             current_realized = float(account["realized_pnl"])
 
@@ -717,14 +948,14 @@ def close_futures_position(
             new_total_realized = round(current_realized + realized_pnl, 2)
 
             cursor.execute(
-                "UPDATE accounts SET cash = ?, realized_pnl = ?, updated_at = ? WHERE user_id = ?",
-                (new_cash, new_total_realized, now_iso, user_id),
+                "UPDATE accounts SET cash = ?, realized_pnl = ?, updated_at = ?, last_mutation_at = ? WHERE user_id = ?",
+                (new_cash, new_total_realized, mut_ts, mut_ts, user_id),
             )
             cursor.execute("""
                 UPDATE futures_positions
                 SET status = 'CLOSED', exit_price = ?, realized_pnl = ?, updated_at = ?, closed_at = ?
                 WHERE id = ? AND user_id = ?
-            """, (exit_price, realized_pnl, now_iso, now_iso, position_id, user_id))
+            """, (exit_price, realized_pnl, mut_ts, mut_ts, position_id, user_id))
 
             cursor.execute("""
                 INSERT INTO transactions (
@@ -737,7 +968,7 @@ def close_futures_position(
                 order_id, user_id, ticker, close_side, total_qty,
                 int(pos["lots"]), int(pos["lot_size"]), pos["expiry_date"], pos["contract_symbol"],
                 exit_price, released_cash, margin_blocked, realized_pnl,
-                now_iso, now_formatted, idem_key, position_id,
+                mut_ts, mut_formatted, idem_key, position_id,
                 f"Closed {side} {pos['contract_symbol']} @ ₹{exit_price:,.2f} (Entry ₹{entry_price:,.2f})",
             ))
 
@@ -758,8 +989,8 @@ def close_futures_position(
                 "exit_price": round(exit_price, 2),
                 "margin_released": round(margin_blocked, 2),
                 "realized_pnl": realized_pnl,
-                "timestamp": now_iso,
-                "formatted_time": now_formatted,
+                "timestamp": mut_ts,
+                "formatted_time": mut_formatted,
                 "status": "CLOSED",
                 "message": f"Closed {side} {pos['contract_symbol']} ({total_qty} shares) @ ₹{exit_price:,.2f} | Realized P&L: {'+' if realized_pnl >= 0 else ''}₹{realized_pnl:,.2f}",
             }
@@ -771,17 +1002,26 @@ def close_futures_position(
             conn.close()
 
 
-def cancel_futures_order(user_id: str, position_id: str) -> Dict[str, Any]:
+def cancel_futures_order(
+    user_id: str,
+    position_id: str,
+    client_account: Optional[Dict[str, Any]] = None,
+    client_transactions: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     """Cancels a pending LIMIT Futures order and refunds reserved margin to virtual cash."""
     user_id = normalize_user_id(user_id)
     position_id = (position_id or "").strip()
-    now_iso = datetime.now(IST).isoformat()
 
     with _DB_LOCK:
         conn = _get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("BEGIN IMMEDIATE")
+
+            account = _reconcile_client_snapshot_in_tx(
+                conn, cursor, user_id, client_account, client_transactions,
+                required_position_id=position_id,
+            )
 
             cursor.execute(
                 "SELECT * FROM futures_positions WHERE id = ? AND user_id = ?",
@@ -793,19 +1033,19 @@ def cancel_futures_order(user_id: str, position_id: str) -> Dict[str, Any]:
             if pos["status"] != "PENDING_LIMIT":
                 raise ValueError(f"Only PENDING_LIMIT Futures orders can be cancelled (status is {pos['status']}).")
 
-            account = get_or_create_account(conn, user_id)
+            mut_ts = _next_mutation_ts(account.get("last_mutation_at"))
             refund_margin = float(pos["margin_blocked"])
             new_cash = round(float(account["cash"]) + refund_margin, 2)
 
             cursor.execute(
-                "UPDATE accounts SET cash = ?, updated_at = ? WHERE user_id = ?",
-                (new_cash, now_iso, user_id),
+                "UPDATE accounts SET cash = ?, updated_at = ?, last_mutation_at = ? WHERE user_id = ?",
+                (new_cash, mut_ts, mut_ts, user_id),
             )
             cursor.execute("""
                 UPDATE futures_positions
                 SET status = 'CANCELLED', updated_at = ?, closed_at = ?
                 WHERE id = ? AND user_id = ?
-            """, (now_iso, now_iso, position_id, user_id))
+            """, (mut_ts, mut_ts, position_id, user_id))
 
             cursor.execute(
                 "UPDATE transactions SET status = 'CANCELLED' WHERE position_id = ? AND user_id = ? AND status = 'PENDING_LIMIT'",
@@ -836,10 +1076,7 @@ def _process_pending_limit_orders(conn: sqlite3.Connection, user_id: str, live_q
     if not pending_rows:
         return
 
-    now_dt = datetime.now(IST)
-    now_iso = now_dt.isoformat()
-    now_formatted = now_dt.strftime("%d %b %Y, %I:%M:%S %p IST")
-
+    filled_any = False
     for row in pending_rows:
         spot = _resolve_spot_price(row["ticker"], live_quotes)
         if spot <= 0:
@@ -865,24 +1102,28 @@ def _process_pending_limit_orders(conn: sqlite3.Connection, user_id: str, live_q
         if margin_delta > current_cash:
             continue  # Wait until cash permits if upward price delta needs extra margin
 
+        mut_ts = _next_mutation_ts(account.get("last_mutation_at"))
+        mut_formatted = datetime.fromisoformat(mut_ts).strftime("%d %b %Y, %I:%M:%S %p IST")
         adjusted_cash = round(current_cash - margin_delta, 2)
         cursor.execute(
-            "UPDATE accounts SET cash = ?, updated_at = ? WHERE user_id = ?",
-            (adjusted_cash, now_iso, user_id),
+            "UPDATE accounts SET cash = ?, updated_at = ?, last_mutation_at = ? WHERE user_id = ?",
+            (adjusted_cash, mut_ts, mut_ts, user_id),
         )
         cursor.execute("""
             UPDATE futures_positions
             SET status = 'OPEN', entry_price = ?, trade_value = ?, margin_blocked = ?, updated_at = ?
             WHERE id = ? AND user_id = ?
-        """, (curr_fut, new_trade_val, new_margin, now_iso, row["id"], user_id))
+        """, (curr_fut, new_trade_val, new_margin, mut_ts, row["id"], user_id))
         cursor.execute("""
             UPDATE transactions
             SET status = 'EXECUTED', execution_price = ?, total_amount = ?, margin_used = ?,
                 timestamp = ?, formatted_time = ?
             WHERE position_id = ? AND user_id = ? AND status = 'PENDING_LIMIT'
-        """, (curr_fut, new_margin, new_margin, now_iso, now_formatted, row["id"], user_id))
+        """, (curr_fut, new_margin, new_margin, mut_ts, mut_formatted, row["id"], user_id))
+        filled_any = True
 
-    conn.commit()
+    if filled_any:
+        conn.commit()
 
 
 def get_account_summary(user_id: str) -> Dict[str, Any]:
@@ -1124,6 +1365,7 @@ def get_account_summary(user_id: str) -> Dict[str, Any]:
         "pending_futures_orders": pending_futures_orders,
         "closed_futures_positions": closed_futures_positions,
         "is_simulated": True,
+        "state_updated_at": str(account.get("last_mutation_at") or ""),
         "last_updated": now_dt.isoformat(),
         "last_updated_formatted": now_dt.strftime("%d %b %Y, %I:%M:%S %p IST"),
         "market_session": market_hours.get("market_session_message", "MARKET CLOSED"),
@@ -1163,23 +1405,25 @@ def get_transactions(user_id: str, order_type: Optional[str] = None, limit: int 
 def reset_account(user_id: str) -> Dict[str, Any]:
     """Resets user virtual account to ₹1,00,000 cash and wipes active Equity & Futures positions."""
     user_id = normalize_user_id(user_id)
-    now_dt = datetime.now(IST)
-    now_iso = now_dt.isoformat()
-    now_formatted = now_dt.strftime("%d %b %Y, %I:%M:%S %p IST")
 
     with _DB_LOCK:
         conn = _get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("BEGIN IMMEDIATE")
+            existing_acc = get_or_create_account(conn, user_id)
+            mut_ts = _next_mutation_ts(existing_acc.get("last_mutation_at"))
+            mut_formatted = datetime.fromisoformat(mut_ts).strftime("%d %b %Y, %I:%M:%S %p IST")
+
             cursor.execute("""
-                INSERT INTO accounts (user_id, cash, realized_pnl, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO accounts (user_id, cash, realized_pnl, created_at, updated_at, last_mutation_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(user_id) DO UPDATE SET
                     cash = excluded.cash,
                     realized_pnl = excluded.realized_pnl,
-                    updated_at = excluded.updated_at
-            """, (user_id, INITIAL_VIRTUAL_CAPITAL, 0.0, now_iso, now_iso))
+                    updated_at = excluded.updated_at,
+                    last_mutation_at = excluded.last_mutation_at
+            """, (user_id, INITIAL_VIRTUAL_CAPITAL, 0.0, mut_ts, mut_ts, mut_ts))
             cursor.execute("DELETE FROM holdings WHERE user_id = ?", (user_id,))
             cursor.execute("DELETE FROM futures_positions WHERE user_id = ?", (user_id,))
 
@@ -1190,7 +1434,7 @@ def reset_account(user_id: str) -> Dict[str, Any]:
                 ) VALUES (?, ?, ?, ?, 'SYSTEM', 0, 0.0, ?, 0.0, ?, ?, 'EXECUTED', 'ACCOUNT_RESET_TO_1_LAKH')
             """, (
                 f"RST-{uuid.uuid4().hex[:10].upper()}", user_id, "ACCOUNT_RESET", "RESET",
-                INITIAL_VIRTUAL_CAPITAL, now_iso, now_formatted,
+                INITIAL_VIRTUAL_CAPITAL, mut_ts, mut_formatted,
             ))
 
             conn.commit()
@@ -1207,144 +1451,23 @@ def sync_user_account(
     user_id: str,
     client_account: Dict[str, Any],
     client_transactions: Optional[List[Dict[str, Any]]] = None,
+    force: bool = False,
 ) -> Dict[str, Any]:
     """
-    Synchronizes client-persisted state (Equity + Futures + Watchlist) with serverless SQLite.
-    Ensures zero data loss across container recycles/cold starts.
+    Synchronizes client-persisted state (Equity + Futures) with serverless SQLite.
+    Ensures zero data loss across container recycles, cold starts, and multi-container routing.
     """
     user_id = normalize_user_id(user_id)
-    now_dt = datetime.now(IST)
-    now_iso = now_dt.isoformat()
-
-    is_dict = isinstance(client_account, dict)
-    client_holdings = client_account.get("holdings", []) if is_dict else []
-    client_futures = client_account.get("futures_positions", []) if is_dict else []
-    client_pending_futures = client_account.get("pending_futures_orders", []) if is_dict else []
-    client_closed_futures = client_account.get("closed_futures_positions", []) if is_dict else []
-    client_cash = float(client_account.get("available_cash", INITIAL_VIRTUAL_CAPITAL)) if is_dict else INITIAL_VIRTUAL_CAPITAL
-    client_realized = float(client_account.get("realized_pnl", 0.0)) if is_dict else 0.0
 
     with _DB_LOCK:
         conn = _get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute("BEGIN IMMEDIATE")
-
-            cursor.execute("SELECT COUNT(*) as cnt FROM holdings WHERE user_id = ?", (user_id,))
-            server_holdings_count = cursor.fetchone()["cnt"]
-            cursor.execute("SELECT COUNT(*) as cnt FROM futures_positions WHERE user_id = ?", (user_id,))
-            server_futures_count = cursor.fetchone()["cnt"]
-            cursor.execute("SELECT COUNT(*) as cnt FROM transactions WHERE user_id = ?", (user_id,))
-            server_tx_count = cursor.fetchone()["cnt"]
-
-            has_client_state = (
-                len(client_holdings) > 0
-                or len(client_futures) > 0
-                or len(client_pending_futures) > 0
-                or len(client_closed_futures) > 0
-                or client_cash != INITIAL_VIRTUAL_CAPITAL
-                or client_realized != 0.0
+            _reconcile_client_snapshot_in_tx(
+                conn, cursor, user_id, client_account, client_transactions, force=force
             )
-
-            if server_holdings_count == 0 and server_futures_count == 0 and server_tx_count == 0 and has_client_state:
-                cursor.execute("""
-                    INSERT INTO accounts (user_id, cash, realized_pnl, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?)
-                    ON CONFLICT(user_id) DO UPDATE SET
-                        cash = excluded.cash,
-                        realized_pnl = excluded.realized_pnl,
-                        updated_at = excluded.updated_at
-                """, (user_id, client_cash, client_realized, now_iso, now_iso))
-
-                for h in client_holdings:
-                    t = h.get("ticker", "").upper().strip()
-                    q = int(h.get("quantity", 0))
-                    avg_p = float(h.get("avg_buy_price", 0.0))
-                    tot_inv = float(h.get("total_invested", q * avg_p))
-                    if t and q > 0:
-                        cursor.execute("""
-                            INSERT INTO holdings (user_id, ticker, quantity, avg_buy_price, total_invested, updated_at)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                            ON CONFLICT(user_id, ticker) DO UPDATE SET
-                                quantity = excluded.quantity,
-                                avg_buy_price = excluded.avg_buy_price,
-                                total_invested = excluded.total_invested,
-                                updated_at = excluded.updated_at
-                        """, (user_id, t, q, avg_p, tot_inv, now_iso))
-
-                all_client_futures = list(client_futures) + list(client_pending_futures) + list(client_closed_futures)
-                for fp in all_client_futures:
-                    fp_id = fp.get("id") or f"FUT-{uuid.uuid4().hex[:10].upper()}"
-                    t = fp.get("ticker", "").upper().strip()
-                    if not t:
-                        continue
-                    cursor.execute("""
-                        INSERT OR IGNORE INTO futures_positions (
-                            id, user_id, ticker, contract_symbol, expiry_date, expiry_formatted,
-                            exchange, side, order_mode, lot_size, lots, total_quantity,
-                            entry_price, limit_price, trade_value, margin_blocked, margin_pct,
-                            status, exit_price, realized_pnl, created_at, updated_at, closed_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        fp_id, user_id, t,
-                        fp.get("contract_symbol", f"{t} FUT"),
-                        fp.get("expiry_date", ""),
-                        fp.get("expiry_formatted", ""),
-                        fp.get("exchange", "NSE"),
-                        fp.get("side", "BUY"),
-                        fp.get("order_mode", "MARKET"),
-                        int(fp.get("lot_size", 1)),
-                        int(fp.get("lots", 1)),
-                        int(fp.get("total_quantity", 1)),
-                        float(fp.get("entry_price", fp.get("limit_price", 0.0))),
-                        fp.get("limit_price"),
-                        float(fp.get("trade_value", 0.0)),
-                        float(fp.get("margin_blocked", 0.0)),
-                        float(fp.get("margin_pct", 0.05)),
-                        fp.get("status", "OPEN"),
-                        fp.get("exit_price"),
-                        float(fp.get("realized_pnl", 0.0)),
-                        fp.get("created_at", now_iso),
-                        now_iso,
-                        fp.get("closed_at"),
-                    ))
-
-                if client_transactions:
-                    for tx in client_transactions:
-                        tx_id = tx.get("id") or f"TX-{uuid.uuid4().hex[:8].upper()}"
-                        tx_ticker = tx.get("ticker", "").upper()
-                        tx_type = tx.get("order_type", "BUY").upper()
-                        tx_qty = int(tx.get("quantity", 0))
-                        tx_price = float(tx.get("execution_price", 0.0))
-                        tx_tot = float(tx.get("total_amount", tx_qty * tx_price))
-                        tx_pnl = float(tx.get("realized_pnl", 0.0))
-                        tx_time = tx.get("timestamp", now_iso)
-                        tx_formatted = tx.get("formatted_time", now_dt.strftime("%d %b %Y, %I:%M:%S %p IST"))
-                        tx_status = tx.get("status", "EXECUTED")
-                        cursor.execute("""
-                            INSERT OR IGNORE INTO transactions (
-                                id, user_id, ticker, order_type, instrument_type, side, quantity,
-                                lots, lot_size, expiry_date, contract_symbol, execution_price,
-                                total_amount, margin_used, realized_pnl, timestamp, formatted_time,
-                                status, order_mode, position_id, notes
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYNC_RESTORED')
-                        """, (
-                            tx_id, user_id, tx_ticker, tx_type,
-                            tx.get("instrument_type", "FUTURES" if "FUTURES" in tx_type else "EQUITY"),
-                            tx.get("side"),
-                            tx_qty,
-                            int(tx.get("lots", 0) or 0),
-                            int(tx.get("lot_size", 0) or 0),
-                            tx.get("expiry_date"),
-                            tx.get("contract_symbol"),
-                            tx_price, tx_tot,
-                            float(tx.get("margin_used", 0.0) or 0.0),
-                            tx_pnl, tx_time, tx_formatted, tx_status,
-                            tx.get("order_mode", "MARKET"),
-                            tx.get("position_id"),
-                        ))
-
-                conn.commit()
+            conn.commit()
         except Exception as e:
             conn.rollback()
             raise e
@@ -1358,13 +1481,13 @@ def sync_user_account(
 # PER-USER WATCHLIST DATABASE PERSISTENCE
 # ==========================================
 
-def _ensure_watchlist_initialized(cursor: sqlite3.Cursor, user_id: str, now_iso: str) -> None:
-    cursor.execute("SELECT initialized FROM watchlist_meta WHERE user_id = ?", (user_id,))
+def _ensure_watchlist_initialized(cursor: sqlite3.Cursor, user_id: str, now_iso: str) -> str:
+    cursor.execute("SELECT initialized, COALESCE(last_mutation_at, '') as last_mutation_at FROM watchlist_meta WHERE user_id = ?", (user_id,))
     row = cursor.fetchone()
     if row:
-        return
+        return str(row["last_mutation_at"] or "")
     cursor.execute(
-        "INSERT INTO watchlist_meta (user_id, initialized, updated_at) VALUES (?, 1, ?)",
+        "INSERT INTO watchlist_meta (user_id, initialized, updated_at, last_mutation_at) VALUES (?, 1, ?, '')",
         (user_id, now_iso),
     )
     for idx, t in enumerate(DEFAULT_WATCHLIST_TICKERS):
@@ -1372,10 +1495,47 @@ def _ensure_watchlist_initialized(cursor: sqlite3.Cursor, user_id: str, now_iso:
             "INSERT OR IGNORE INTO watchlist (user_id, ticker, sort_order, created_at) VALUES (?, ?, ?, ?)",
             (user_id, t, idx, now_iso),
         )
+    return ""
 
 
-def get_user_watchlist(user_id: str) -> List[str]:
-    """Returns the persisted watchlist tickers strictly scoped to user_id."""
+def _reconcile_watchlist_if_newer(
+    cursor: sqlite3.Cursor,
+    user_id: str,
+    server_mut_ts: str,
+    client_tickers: Optional[List[str]],
+    client_updated_at: Optional[str],
+    now_iso: str,
+) -> str:
+    if client_tickers is None:
+        return server_mut_ts
+    client_ts = (client_updated_at or "").strip()
+    is_newer = bool(client_ts and (not server_mut_ts or client_ts > server_mut_ts))
+    if not is_newer:
+        return server_mut_ts
+
+    cleaned: List[str] = []
+    seen = set()
+    for t in client_tickers:
+        sym = str(t).upper().strip()
+        if sym and sym not in seen:
+            seen.add(sym)
+            cleaned.append(sym)
+
+    cursor.execute("DELETE FROM watchlist WHERE user_id = ?", (user_id,))
+    for idx, sym in enumerate(cleaned):
+        cursor.execute(
+            "INSERT INTO watchlist (user_id, ticker, sort_order, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, sym, idx, client_ts or now_iso),
+        )
+    cursor.execute(
+        "UPDATE watchlist_meta SET updated_at = ?, last_mutation_at = ? WHERE user_id = ?",
+        (client_ts or now_iso, client_ts or now_iso, user_id),
+    )
+    return client_ts or server_mut_ts
+
+
+def get_user_watchlist_state(user_id: str) -> Dict[str, Any]:
+    """Returns persisted watchlist tickers and last_mutation_at strictly scoped to user_id."""
     user_id = normalize_user_id(user_id)
     now_iso = datetime.now(IST).isoformat()
     with _DB_LOCK:
@@ -1383,20 +1543,44 @@ def get_user_watchlist(user_id: str) -> List[str]:
         try:
             cursor = conn.cursor()
             cursor.execute("BEGIN IMMEDIATE")
-            _ensure_watchlist_initialized(cursor, user_id, now_iso)
+            mut_ts = _ensure_watchlist_initialized(cursor, user_id, now_iso)
             conn.commit()
 
             cursor.execute(
                 "SELECT ticker FROM watchlist WHERE user_id = ? ORDER BY sort_order ASC, created_at ASC",
                 (user_id,),
             )
-            return [r["ticker"] for r in cursor.fetchall()]
+            return {
+                "user_id": user_id,
+                "tickers": [r["ticker"] for r in cursor.fetchall()],
+                "updated_at": mut_ts,
+            }
         finally:
             conn.close()
 
 
-def add_user_watchlist(user_id: str, ticker: str) -> List[str]:
+def get_user_watchlist(user_id: str) -> List[str]:
+    """Returns the persisted watchlist tickers strictly scoped to user_id."""
+    return get_user_watchlist_state(user_id)["tickers"]
+
+
+def add_user_watchlist(
+    user_id: str,
+    ticker: str,
+    client_tickers: Optional[List[str]] = None,
+    client_updated_at: Optional[str] = None,
+) -> List[str]:
     """Adds a stock ticker to the specified user's persisted watchlist."""
+    return add_user_watchlist_state(user_id, ticker, client_tickers, client_updated_at)["tickers"]
+
+
+def add_user_watchlist_state(
+    user_id: str,
+    ticker: str,
+    client_tickers: Optional[List[str]] = None,
+    client_updated_at: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Adds a stock ticker and returns {user_id, tickers, updated_at}."""
     user_id = normalize_user_id(user_id)
     ticker = (ticker or "").upper().strip()
     if not ticker:
@@ -1408,23 +1592,31 @@ def add_user_watchlist(user_id: str, ticker: str) -> List[str]:
         try:
             cursor = conn.cursor()
             cursor.execute("BEGIN IMMEDIATE")
-            _ensure_watchlist_initialized(cursor, user_id, now_iso)
+            server_mut = _ensure_watchlist_initialized(cursor, user_id, now_iso)
+            server_mut = _reconcile_watchlist_if_newer(
+                cursor, user_id, server_mut, client_tickers, client_updated_at, now_iso
+            )
+            mut_ts = _next_mutation_ts(server_mut)
             cursor.execute("SELECT COALESCE(MAX(sort_order), -1) as max_ord FROM watchlist WHERE user_id = ?", (user_id,))
             next_ord = int(cursor.fetchone()["max_ord"]) + 1
             cursor.execute(
                 "INSERT OR IGNORE INTO watchlist (user_id, ticker, sort_order, created_at) VALUES (?, ?, ?, ?)",
-                (user_id, ticker, next_ord, now_iso),
+                (user_id, ticker, next_ord, mut_ts),
             )
             cursor.execute(
-                "UPDATE watchlist_meta SET updated_at = ? WHERE user_id = ?",
-                (now_iso, user_id),
+                "UPDATE watchlist_meta SET updated_at = ?, last_mutation_at = ? WHERE user_id = ?",
+                (mut_ts, mut_ts, user_id),
             )
             conn.commit()
             cursor.execute(
                 "SELECT ticker FROM watchlist WHERE user_id = ? ORDER BY sort_order ASC, created_at ASC",
                 (user_id,),
             )
-            return [r["ticker"] for r in cursor.fetchall()]
+            return {
+                "user_id": user_id,
+                "tickers": [r["ticker"] for r in cursor.fetchall()],
+                "updated_at": mut_ts,
+            }
         except Exception as e:
             conn.rollback()
             raise e
@@ -1432,8 +1624,23 @@ def add_user_watchlist(user_id: str, ticker: str) -> List[str]:
             conn.close()
 
 
-def remove_user_watchlist(user_id: str, ticker: str) -> List[str]:
+def remove_user_watchlist(
+    user_id: str,
+    ticker: str,
+    client_tickers: Optional[List[str]] = None,
+    client_updated_at: Optional[str] = None,
+) -> List[str]:
     """Removes a stock ticker from the specified user's persisted watchlist."""
+    return remove_user_watchlist_state(user_id, ticker, client_tickers, client_updated_at)["tickers"]
+
+
+def remove_user_watchlist_state(
+    user_id: str,
+    ticker: str,
+    client_tickers: Optional[List[str]] = None,
+    client_updated_at: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Removes a stock ticker and returns {user_id, tickers, updated_at}."""
     user_id = normalize_user_id(user_id)
     ticker = (ticker or "").upper().strip()
     now_iso = datetime.now(IST).isoformat()
@@ -1443,18 +1650,26 @@ def remove_user_watchlist(user_id: str, ticker: str) -> List[str]:
         try:
             cursor = conn.cursor()
             cursor.execute("BEGIN IMMEDIATE")
-            _ensure_watchlist_initialized(cursor, user_id, now_iso)
+            server_mut = _ensure_watchlist_initialized(cursor, user_id, now_iso)
+            server_mut = _reconcile_watchlist_if_newer(
+                cursor, user_id, server_mut, client_tickers, client_updated_at, now_iso
+            )
+            mut_ts = _next_mutation_ts(server_mut)
             cursor.execute("DELETE FROM watchlist WHERE user_id = ? AND ticker = ?", (user_id, ticker))
             cursor.execute(
-                "UPDATE watchlist_meta SET updated_at = ? WHERE user_id = ?",
-                (now_iso, user_id),
+                "UPDATE watchlist_meta SET updated_at = ?, last_mutation_at = ? WHERE user_id = ?",
+                (mut_ts, mut_ts, user_id),
             )
             conn.commit()
             cursor.execute(
                 "SELECT ticker FROM watchlist WHERE user_id = ? ORDER BY sort_order ASC, created_at ASC",
                 (user_id,),
             )
-            return [r["ticker"] for r in cursor.fetchall()]
+            return {
+                "user_id": user_id,
+                "tickers": [r["ticker"] for r in cursor.fetchall()],
+                "updated_at": mut_ts,
+            }
         except Exception as e:
             conn.rollback()
             raise e
@@ -1462,10 +1677,18 @@ def remove_user_watchlist(user_id: str, ticker: str) -> List[str]:
             conn.close()
 
 
-def sync_user_watchlist(user_id: str, tickers: List[str]) -> List[str]:
+def sync_user_watchlist(user_id: str, tickers: List[str], client_updated_at: Optional[str] = None) -> List[str]:
     """Replaces or restores user's watchlist cleanly on sync."""
+    return sync_user_watchlist_state(user_id, tickers, client_updated_at)["tickers"]
+
+
+def sync_user_watchlist_state(
+    user_id: str,
+    tickers: List[str],
+    client_updated_at: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Replaces or restores user's watchlist cleanly and returns {user_id, tickers, updated_at}."""
     user_id = normalize_user_id(user_id)
-    now_iso = datetime.now(IST).isoformat()
     cleaned: List[str] = []
     seen = set()
     for t in (tickers or []):
@@ -1479,19 +1702,36 @@ def sync_user_watchlist(user_id: str, tickers: List[str]) -> List[str]:
         try:
             cursor = conn.cursor()
             cursor.execute("BEGIN IMMEDIATE")
+            cursor.execute("SELECT COALESCE(last_mutation_at, '') as last_mutation_at FROM watchlist_meta WHERE user_id = ?", (user_id,))
+            row = cursor.fetchone()
+            server_mut = str(row["last_mutation_at"] or "") if row else ""
+            client_ts = (client_updated_at or "").strip()
+
+            if client_ts and server_mut and server_mut > client_ts:
+                cursor.execute(
+                    "SELECT ticker FROM watchlist WHERE user_id = ? ORDER BY sort_order ASC, created_at ASC",
+                    (user_id,),
+                )
+                return {
+                    "user_id": user_id,
+                    "tickers": [r["ticker"] for r in cursor.fetchall()],
+                    "updated_at": server_mut,
+                }
+
+            mut_ts = client_ts or _next_mutation_ts(server_mut)
             cursor.execute(
-                "INSERT INTO watchlist_meta (user_id, initialized, updated_at) VALUES (?, 1, ?) "
-                "ON CONFLICT(user_id) DO UPDATE SET initialized = 1, updated_at = excluded.updated_at",
-                (user_id, now_iso),
+                "INSERT INTO watchlist_meta (user_id, initialized, updated_at, last_mutation_at) VALUES (?, 1, ?, ?) "
+                "ON CONFLICT(user_id) DO UPDATE SET initialized = 1, updated_at = excluded.updated_at, last_mutation_at = excluded.last_mutation_at",
+                (user_id, mut_ts, mut_ts),
             )
             cursor.execute("DELETE FROM watchlist WHERE user_id = ?", (user_id,))
             for idx, sym in enumerate(cleaned):
                 cursor.execute(
                     "INSERT INTO watchlist (user_id, ticker, sort_order, created_at) VALUES (?, ?, ?, ?)",
-                    (user_id, sym, idx, now_iso),
+                    (user_id, sym, idx, mut_ts),
                 )
             conn.commit()
-            return cleaned
+            return {"user_id": user_id, "tickers": cleaned, "updated_at": mut_ts}
         except Exception as e:
             conn.rollback()
             raise e
