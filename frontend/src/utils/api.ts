@@ -1,34 +1,55 @@
-const PRODUCTION_API_URL = "https://vanguard-stocks-backend.vercel.app";
-const PRODUCTION_WS_URL = "wss://vanguard-stocks-backend.vercel.app";
+const DEFAULT_PRODUCTION_API_URL = "https://vanguard-stocks-dashboard.vercel.app";
+const DEFAULT_PRODUCTION_WS_URL = "wss://vanguard-stocks-dashboard.vercel.app";
+
+function normalizeBaseUrl(url: string): string {
+  let cleaned = url.trim().replace(/\/+$/, "");
+  if (cleaned.endsWith("/api")) {
+    cleaned = cleaned.slice(0, -4).replace(/\/+$/, "");
+  }
+  return cleaned;
+}
 
 export function getApiBase(): string {
-  if (process.env.NEXT_PUBLIC_API_BASE) {
-    return process.env.NEXT_PUBLIC_API_BASE.replace(/\/+$/, "");
+  if (process.env.NEXT_PUBLIC_API_URL && process.env.NEXT_PUBLIC_API_URL.trim()) {
+    return normalizeBaseUrl(process.env.NEXT_PUBLIC_API_URL);
+  }
+  if (process.env.NEXT_PUBLIC_API_BASE && process.env.NEXT_PUBLIC_API_BASE.trim()) {
+    return normalizeBaseUrl(process.env.NEXT_PUBLIC_API_BASE);
   }
   if (typeof window !== "undefined") {
     const hostname = window.location.hostname;
     if (hostname !== "localhost" && hostname !== "127.0.0.1") {
-      return PRODUCTION_API_URL;
+      return DEFAULT_PRODUCTION_API_URL;
     }
   }
   if (process.env.NODE_ENV === "production") {
-    return PRODUCTION_API_URL;
+    return DEFAULT_PRODUCTION_API_URL;
   }
   return "http://localhost:8000";
 }
 
 export function getWsBase(): string {
-  if (process.env.NEXT_PUBLIC_WS_BASE) {
-    return process.env.NEXT_PUBLIC_WS_BASE.replace(/\/+$/, "");
+  if (process.env.NEXT_PUBLIC_WS_URL && process.env.NEXT_PUBLIC_WS_URL.trim()) {
+    return normalizeBaseUrl(process.env.NEXT_PUBLIC_WS_URL);
+  }
+  if (process.env.NEXT_PUBLIC_WS_BASE && process.env.NEXT_PUBLIC_WS_BASE.trim()) {
+    return normalizeBaseUrl(process.env.NEXT_PUBLIC_WS_BASE);
+  }
+  const apiBase = getApiBase();
+  if (apiBase.startsWith("https://")) {
+    return apiBase.replace(/^https:\/\//, "wss://");
+  }
+  if (apiBase.startsWith("http://")) {
+    return apiBase.replace(/^http:\/\//, "ws://");
   }
   if (typeof window !== "undefined") {
     const hostname = window.location.hostname;
     if (hostname !== "localhost" && hostname !== "127.0.0.1") {
-      return PRODUCTION_WS_URL;
+      return DEFAULT_PRODUCTION_WS_URL;
     }
   }
   if (process.env.NODE_ENV === "production") {
-    return PRODUCTION_WS_URL;
+    return DEFAULT_PRODUCTION_WS_URL;
   }
   return "ws://localhost:8000";
 }
@@ -473,22 +494,153 @@ export interface FuturesDetail {
   backtest: FuturesBacktestDetail;
 }
 
-export async function fetchFuturesOpportunities(): Promise<FuturesOpportunity[]> {
-  const res = await fetch(`${getApiBase()}/api/futures-income/opportunities`, {
-    cache: "no-store",
-    headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+function parseFuturesOpportunitiesPayload(data: any): FuturesOpportunity[] {
+  let list: any[] = [];
+  if (Array.isArray(data)) {
+    list = data;
+  } else if (data && typeof data === "object") {
+    if (Array.isArray(data.opportunities)) {
+      list = data.opportunities;
+    } else if (Array.isArray(data.data)) {
+      list = data.data;
+    } else if (Array.isArray(data.results)) {
+      list = data.results;
+    } else if (Array.isArray(data.items)) {
+      list = data.items;
+    } else if (Array.isArray(data.payload)) {
+      list = data.payload;
+    }
+  }
+
+  return list.map((opp: any) => {
+    const spotPrice = typeof opp.price === "number" ? opp.price : Number(opp.price || 0);
+    const futPrice = typeof opp.futures_price === "number" ? opp.futures_price : spotPrice;
+    return {
+      ticker: String(opp.ticker || "").toUpperCase(),
+      sector: String(opp.sector || "Equities"),
+      strategy_score: typeof opp.strategy_score === "number" ? opp.strategy_score : Number(opp.strategy_score || 0),
+      pop: typeof opp.pop === "number" ? opp.pop : Number(opp.pop || 0),
+      expected_yield: typeof opp.expected_yield === "number" ? opp.expected_yield : Number(opp.expected_yield || 0),
+      price: spotPrice,
+      futures_price: futPrice,
+      exchange: String(opp.exchange || "NSE"),
+      expiry_date: opp.expiry_date || "",
+      expiry_formatted: opp.expiry_formatted || "",
+      lot_size: typeof opp.lot_size === "number" ? opp.lot_size : (opp.lot_size ? Number(opp.lot_size) : undefined),
+      margin_per_lot: typeof opp.margin_per_lot === "number" ? opp.margin_per_lot : (opp.margin_per_lot ? Number(opp.margin_per_lot) : undefined),
+      future_contract: opp.future_contract || `${opp.ticker || ""} FUT`,
+      option_contract: opp.option_contract || "",
+      expected_return: typeof opp.expected_return === "number" ? opp.expected_return : Number(opp.expected_return || 0),
+      strategy_type: opp.strategy_type || "covered_call",
+    };
   });
-  if (!res.ok) throw new Error("Failed to fetch futures opportunities");
-  return res.json();
+}
+
+export async function fetchFuturesOpportunities(): Promise<FuturesOpportunity[]> {
+  const base = getApiBase();
+  const primaryEndpoint = `${base}/api/futures-income/opportunities`;
+  try {
+    const res = await fetch(primaryEndpoint, {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+    });
+    if (!res.ok) {
+      let errorDetail = "";
+      try {
+        const text = await res.text();
+        try {
+          const parsed = JSON.parse(text);
+          errorDetail = parsed.detail || parsed.message || text;
+        } catch {
+          errorDetail = text;
+        }
+      } catch {}
+      const errMsg = errorDetail
+        ? `API error (${res.status}): ${errorDetail.slice(0, 150)}`
+        : `API error: HTTP ${res.status} (${res.statusText || "Request failed"})`;
+      console.error(`[fetchFuturesOpportunities] Error from ${primaryEndpoint}:`, errMsg);
+      throw new Error(errMsg);
+    }
+    const data = await res.json();
+    const opportunities = parseFuturesOpportunitiesPayload(data);
+    console.log(`[fetchFuturesOpportunities] Successfully loaded ${opportunities.length} opportunities from ${primaryEndpoint}`);
+    return opportunities;
+  } catch (err: any) {
+    console.error(`[fetchFuturesOpportunities] Request to ${primaryEndpoint} failed:`, err?.message || err);
+
+    // In browser runtime, if the primary absolute cross-origin call fails, try relative proxy endpoint
+    if (typeof window !== "undefined") {
+      const fallbackEndpoint = primaryEndpoint.startsWith("http")
+        ? "/api/futures-income/opportunities"
+        : `${DEFAULT_PRODUCTION_API_URL}/api/futures-income/opportunities`;
+      if (fallbackEndpoint !== primaryEndpoint) {
+        console.warn(`[fetchFuturesOpportunities] Retrying via fallback: ${fallbackEndpoint}`);
+        try {
+          const fallbackRes = await fetch(fallbackEndpoint, {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+          });
+          if (fallbackRes.ok) {
+            const fallbackData = await fallbackRes.json();
+            const opportunities = parseFuturesOpportunitiesPayload(fallbackData);
+            console.log(`[fetchFuturesOpportunities] Fallback succeeded: loaded ${opportunities.length} opportunities from ${fallbackEndpoint}`);
+            return opportunities;
+          }
+        } catch (fallbackErr: any) {
+          console.error(`[fetchFuturesOpportunities] Fallback endpoint ${fallbackEndpoint} also failed:`, fallbackErr?.message || fallbackErr);
+        }
+      }
+    }
+
+    throw err;
+  }
 }
 
 export async function fetchFuturesDetail(ticker: string): Promise<FuturesDetail> {
-  const res = await fetch(`${getApiBase()}/api/futures-income/detail/${ticker}`, {
-    cache: "no-store",
-    headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
-  });
-  if (!res.ok) throw new Error("Failed to fetch futures detail");
-  return res.json();
+  const base = getApiBase();
+  const symbol = encodeURIComponent(ticker.toUpperCase());
+  const primaryEndpoint = `${base}/api/futures-income/detail/${symbol}`;
+  try {
+    const res = await fetch(primaryEndpoint, {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+    });
+    if (!res.ok) {
+      let errorDetail = "";
+      try {
+        const text = await res.text();
+        try {
+          const parsed = JSON.parse(text);
+          errorDetail = parsed.detail || parsed.message || text;
+        } catch {
+          errorDetail = text;
+        }
+      } catch {}
+      const errMsg = errorDetail
+        ? `API error (${res.status}): ${errorDetail.slice(0, 150)}`
+        : `API error: HTTP ${res.status} (${res.statusText || "Request failed"})`;
+      console.error(`[fetchFuturesDetail] Error from ${primaryEndpoint}:`, errMsg);
+      throw new Error(errMsg);
+    }
+    return await res.json();
+  } catch (err: any) {
+    console.error(`[fetchFuturesDetail] Request to ${primaryEndpoint} failed:`, err?.message || err);
+    if (typeof window !== "undefined") {
+      const fallbackEndpoint = primaryEndpoint.startsWith("http")
+        ? `/api/futures-income/detail/${symbol}`
+        : `${DEFAULT_PRODUCTION_API_URL}/api/futures-income/detail/${symbol}`;
+      if (fallbackEndpoint !== primaryEndpoint) {
+        try {
+          const fbRes = await fetch(fallbackEndpoint, {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+          });
+          if (fbRes.ok) return await fbRes.json();
+        } catch {}
+      }
+    }
+    throw err;
+  }
 }
 
 export async function fetchFuturesContracts(): Promise<{
@@ -788,7 +940,6 @@ export interface PaperAccount {
   pending_futures_orders?: PendingFuturesOrder[];
   closed_futures_positions?: ClosedFuturesPosition[];
   is_simulated: boolean;
-  state_updated_at?: string;
   last_updated: string;
   last_updated_formatted: string;
   market_session: string;
@@ -913,26 +1064,10 @@ export function saveLocalPaperTransactions(userId: string, txs: PaperTransaction
   }
 }
 
-function getClientSnapshotForMutation(uid: string): {
-  client_account?: PaperAccount;
-  client_transactions?: PaperTransaction[];
-} {
-  const localAcc = getLocalPaperAccount(uid);
-  if (!localAcc || (localAcc.user_id && localAcc.user_id !== uid)) {
-    return {};
-  }
-  const localTxs = getLocalPaperTransactions(uid);
-  return {
-    client_account: localAcc,
-    client_transactions: Array.isArray(localTxs) ? localTxs.slice(0, 100) : [],
-  };
-}
-
 export async function syncPaperAccountWithBackend(
   userId: string,
   account: PaperAccount,
-  transactions?: PaperTransaction[],
-  force = false
+  transactions?: PaperTransaction[]
 ): Promise<PaperAccount> {
   const uid = userId || getPaperUserId();
   const res = await fetch(`${getApiBase()}/api/paper-trading/sync`, {
@@ -944,8 +1079,7 @@ export async function syncPaperAccountWithBackend(
     body: JSON.stringify({
       user_id: uid,
       account,
-      transactions: transactions || [],
-      force
+      transactions: transactions || []
     })
   });
   if (!res.ok) {
@@ -953,16 +1087,7 @@ export async function syncPaperAccountWithBackend(
   }
   const data = await res.json();
   if (data?.account) {
-    const latestLocal = getLocalPaperAccount(uid);
-    const latestTs = latestLocal?.state_updated_at || "";
-    const serverTs = data.account?.state_updated_at || "";
-    if (!force && latestLocal && latestTs && serverTs && latestTs > serverTs) {
-      return latestLocal;
-    }
     saveLocalPaperAccount(uid, data.account);
-    if (Array.isArray(data?.transactions)) {
-      saveLocalPaperTransactions(uid, data.transactions);
-    }
     return data.account;
   }
   return account;
@@ -979,37 +1104,30 @@ export async function fetchPaperAccount(userId?: string): Promise<PaperAccount> 
       throw new Error(`Failed to fetch paper trading account (${res.status})`);
     }
     const serverAcc: PaperAccount = await res.json();
-    const localAcc = getLocalPaperAccount(uid);
-    const localTs = localAcc?.state_updated_at || "";
-    const serverTs = serverAcc?.state_updated_at || "";
 
-    // If serverless container was cold, recycled, or behind client's latest mutation,
-    // restore/reconcile from local persisted snapshot cleanly.
+    // If serverless container was recycled and returned completely empty state,
+    // restore from local persisted snapshot if available (equity OR futures)
     const serverEmpty =
       (!serverAcc.holdings || serverAcc.holdings.length === 0) &&
       (!serverAcc.futures_positions || serverAcc.futures_positions.length === 0) &&
       (!serverAcc.pending_futures_orders || serverAcc.pending_futures_orders.length === 0) &&
-      (!serverAcc.closed_futures_positions || serverAcc.closed_futures_positions.length === 0) &&
       serverAcc.realized_pnl === 0 &&
       Math.abs(serverAcc.available_cash - serverAcc.initial_capital) < 0.01;
 
+    const localAcc = getLocalPaperAccount(uid);
     const localHasData = Boolean(
       localAcc &&
       (
         (localAcc.holdings && localAcc.holdings.length > 0) ||
         (localAcc.futures_positions && localAcc.futures_positions.length > 0) ||
         (localAcc.pending_futures_orders && localAcc.pending_futures_orders.length > 0) ||
-        (localAcc.closed_futures_positions && localAcc.closed_futures_positions.length > 0) ||
         (localAcc.realized_pnl !== 0)
       )
     );
 
-    const clientIsNewer = Boolean(localAcc && localTs && (!serverTs || localTs > serverTs));
-    const legacyColdRestore = Boolean(serverEmpty && serverTs === "" && localAcc && localHasData);
-
-    if (clientIsNewer || legacyColdRestore) {
+    if (serverEmpty && localAcc && localHasData) {
       const localTxs = getLocalPaperTransactions(uid);
-      const syncedAcc = await syncPaperAccountWithBackend(uid, localAcc!, localTxs, clientIsNewer);
+      const syncedAcc = await syncPaperAccountWithBackend(uid, localAcc, localTxs);
       saveLocalPaperAccount(uid, syncedAcc);
       return syncedAcc;
     }
@@ -1031,10 +1149,9 @@ export async function executePaperOrder(
   idempotencyKey?: string
 ): Promise<{ success: boolean; order: any; account: PaperAccount }> {
   const uid = userId || getPaperUserId();
-  const snap = getClientSnapshotForMutation(uid);
   const res = await fetch(`${getApiBase()}/api/paper-trading/order`, {
     method: "POST",
-    headers: { 
+    headers: {
       "Content-Type": "application/json",
       "Cache-Control": "no-cache"
     },
@@ -1043,8 +1160,7 @@ export async function executePaperOrder(
       ticker: ticker.toUpperCase(),
       order_type: orderType.toUpperCase(),
       quantity,
-      idempotency_key: idempotencyKey,
-      ...snap
+      idempotency_key: idempotencyKey
     })
   });
   const data = await res.json();
@@ -1053,9 +1169,6 @@ export async function executePaperOrder(
   }
   if (data?.account) {
     saveLocalPaperAccount(uid, data.account);
-  }
-  if (Array.isArray(data?.transactions)) {
-    saveLocalPaperTransactions(uid, data.transactions);
   }
   return data;
 }
@@ -1071,7 +1184,6 @@ export async function executeFuturesOrder(
   idempotencyKey?: string
 ): Promise<{ success: boolean; order: any; account: PaperAccount }> {
   const uid = userId || getPaperUserId();
-  const snap = getClientSnapshotForMutation(uid);
   const res = await fetch(`${getApiBase()}/api/paper-trading/futures/order`, {
     method: "POST",
     headers: {
@@ -1086,8 +1198,7 @@ export async function executeFuturesOrder(
       order_type: orderType.toUpperCase(),
       limit_price: orderType === "LIMIT" ? limitPrice : undefined,
       expiry_date: expiryDate,
-      idempotency_key: idempotencyKey,
-      ...snap
+      idempotency_key: idempotencyKey
     })
   });
   const data = await res.json();
@@ -1096,9 +1207,6 @@ export async function executeFuturesOrder(
   }
   if (data?.account) {
     saveLocalPaperAccount(uid, data.account);
-  }
-  if (Array.isArray(data?.transactions)) {
-    saveLocalPaperTransactions(uid, data.transactions);
   }
   return data;
 }
@@ -1109,7 +1217,6 @@ export async function closeFuturesPosition(
   idempotencyKey?: string
 ): Promise<{ success: boolean; order: any; account: PaperAccount }> {
   const uid = userId || getPaperUserId();
-  const snap = getClientSnapshotForMutation(uid);
   const res = await fetch(`${getApiBase()}/api/paper-trading/futures/close`, {
     method: "POST",
     headers: {
@@ -1119,8 +1226,7 @@ export async function closeFuturesPosition(
     body: JSON.stringify({
       user_id: uid,
       position_id: positionId,
-      idempotency_key: idempotencyKey,
-      ...snap
+      idempotency_key: idempotencyKey
     })
   });
   const data = await res.json();
@@ -1130,9 +1236,6 @@ export async function closeFuturesPosition(
   if (data?.account) {
     saveLocalPaperAccount(uid, data.account);
   }
-  if (Array.isArray(data?.transactions)) {
-    saveLocalPaperTransactions(uid, data.transactions);
-  }
   return data;
 }
 
@@ -1141,7 +1244,6 @@ export async function cancelFuturesOrder(
   positionId: string
 ): Promise<{ success: boolean; cancel: any; account: PaperAccount }> {
   const uid = userId || getPaperUserId();
-  const snap = getClientSnapshotForMutation(uid);
   const res = await fetch(`${getApiBase()}/api/paper-trading/futures/cancel`, {
     method: "POST",
     headers: {
@@ -1150,8 +1252,7 @@ export async function cancelFuturesOrder(
     },
     body: JSON.stringify({
       user_id: uid,
-      position_id: positionId,
-      ...snap
+      position_id: positionId
     })
   });
   const data = await res.json();
@@ -1161,20 +1262,7 @@ export async function cancelFuturesOrder(
   if (data?.account) {
     saveLocalPaperAccount(uid, data.account);
   }
-  if (Array.isArray(data?.transactions)) {
-    saveLocalPaperTransactions(uid, data.transactions);
-  }
   return data;
-}
-
-function filterLocalTransactions(cached: PaperTransaction[], orderType?: "BUY" | "SELL" | "FUTURES"): PaperTransaction[] {
-  if (orderType === "FUTURES") {
-    return cached.filter(t => t.instrument_type === "FUTURES" || (t.order_type || "").startsWith("FUTURES"));
-  }
-  if (orderType) {
-    return cached.filter(t => t.order_type === orderType || t.order_type === `FUTURES_${orderType}`);
-  }
-  return cached;
 }
 
 export async function fetchPaperTransactions(
@@ -1195,38 +1283,19 @@ export async function fetchPaperTransactions(
       throw new Error(`Failed to fetch transaction history (${res.status})`);
     }
     const data: PaperTransaction[] = await res.json();
-    const localTxs = getLocalPaperTransactions(uid);
-    const localAcc = getLocalPaperAccount(uid);
-    const serverMax = data.reduce((m, t) => ((t.timestamp || "") > m ? (t.timestamp || "") : m), "");
-    const localMax = localTxs.reduce((m, t) => ((t.timestamp || "") > m ? (t.timestamp || "") : m), "");
-    const localStateTs = localAcc?.state_updated_at || "";
-
-    // If serverless GET hit a stale container missing client's newer local transactions
-    // (or returning pre-reset transactions older than localAcc.state_updated_at), preserve local.
-    const filteredLocal = filterLocalTransactions(localTxs, orderType);
-    const serverBeforeReset = Boolean(
-      localStateTs &&
-      data.length > filteredLocal.length &&
-      (!serverMax || serverMax < localStateTs)
-    );
-    if (
-      serverBeforeReset ||
-      (
-        localTxs.length > 0 &&
-        localMax &&
-        (!localStateTs || localStateTs >= localMax) &&
-        (data.length < filteredLocal.length || !serverMax || localMax > serverMax)
-      )
-    ) {
-      return filteredLocal;
-    }
-
     if (!orderType) {
       saveLocalPaperTransactions(uid, data);
     }
     return data;
-  } catch {
-    return filterLocalTransactions(getLocalPaperTransactions(uid), orderType);
+  } catch (err) {
+    const cached = getLocalPaperTransactions(uid);
+    if (orderType === "FUTURES") {
+      return cached.filter(t => t.instrument_type === "FUTURES" || (t.order_type || "").startsWith("FUTURES"));
+    }
+    if (orderType) {
+      return cached.filter(t => t.order_type === orderType || t.order_type === `FUTURES_${orderType}`);
+    }
+    return cached;
   }
 }
 
@@ -1236,7 +1305,6 @@ export async function fetchPaperTransactions(
 
 const WATCHLIST_STORAGE_PREFIX = "vanguard_watchlist_v1_";
 const WATCHLIST_CUSTOM_PREFIX = "vanguard_wl_customized_v2_";
-const WATCHLIST_UPDATED_PREFIX = "vanguard_wl_updated_v2_";
 const DEFAULT_WATCHLIST_TICKERS = ["RELIANCE", "TCS", "HDFCBANK", "INFYS", "TATAMOTORS"];
 
 export function getLocalWatchlistTickers(userId: string): string[] {
@@ -1256,31 +1324,13 @@ export function getLocalWatchlistTickers(userId: string): string[] {
   return DEFAULT_WATCHLIST_TICKERS;
 }
 
-export function getLocalWatchlistUpdatedAt(userId: string): string {
-  if (typeof window === "undefined") return "";
-  const uid = userId || DEFAULT_PAPER_USER_ID;
-  try {
-    return window.localStorage.getItem(`${WATCHLIST_UPDATED_PREFIX}${uid}`) || "";
-  } catch {
-    return "";
-  }
-}
-
-export function saveLocalWatchlistTickers(
-  userId: string,
-  tickers: string[],
-  markCustomized = false,
-  updatedAt?: string
-): void {
+export function saveLocalWatchlistTickers(userId: string, tickers: string[], markCustomized = false): void {
   if (typeof window === "undefined") return;
   const uid = userId || DEFAULT_PAPER_USER_ID;
   try {
     window.localStorage.setItem(`${WATCHLIST_STORAGE_PREFIX}${uid}`, JSON.stringify(tickers));
     if (markCustomized) {
       window.localStorage.setItem(`${WATCHLIST_CUSTOM_PREFIX}${uid}`, "1");
-    }
-    if (updatedAt !== undefined) {
-      window.localStorage.setItem(`${WATCHLIST_UPDATED_PREFIX}${uid}`, updatedAt);
     }
   } catch (err) {
     console.error("Failed to save watchlist to localStorage:", err);
@@ -1297,42 +1347,28 @@ function isSameList(a: string[], b: string[]): boolean {
 
 export async function fetchWatchlist(userId: string): Promise<string[]> {
   const uid = userId || getPaperUserId();
-  const startLocalUpdatedAt = getLocalWatchlistUpdatedAt(uid);
-  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort(), 12000) : null;
   try {
     const res = await fetch(`${getApiBase()}/api/watchlist?user_id=${encodeURIComponent(uid)}`, {
       cache: "no-store",
-      headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
-      signal: controller?.signal,
+      headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
     });
     if (!res.ok) throw new Error(`Failed to fetch watchlist (${res.status})`);
     const data = await res.json();
     const serverTickers: string[] = Array.isArray(data?.tickers) ? data.tickers : [];
-    const serverUpdatedAt: string = typeof data?.updated_at === "string" ? data.updated_at : "";
 
-    // Restore customized client watchlist if serverless container cold-started or is behind
+    // Restore customized client watchlist if serverless container cold-started to default 5
     if (typeof window !== "undefined") {
       const isCustomized = window.localStorage.getItem(`${WATCHLIST_CUSTOM_PREFIX}${uid}`) === "1";
       const localTickers = getLocalWatchlistTickers(uid);
-      const localUpdatedAt = getLocalWatchlistUpdatedAt(uid);
-      const mutatedWhileFetching = Boolean(localUpdatedAt && localUpdatedAt !== startLocalUpdatedAt);
-      if (mutatedWhileFetching && (!serverUpdatedAt || localUpdatedAt > serverUpdatedAt)) {
-        return localTickers;
-      }
-      const clientIsNewer = Boolean(isCustomized && localUpdatedAt && (!serverUpdatedAt || localUpdatedAt > serverUpdatedAt));
-      const legacyCold = Boolean(isCustomized && isSameList(serverTickers, DEFAULT_WATCHLIST_TICKERS) && !isSameList(localTickers, DEFAULT_WATCHLIST_TICKERS));
-      if (clientIsNewer || legacyCold) {
-        return await syncWatchlistWithBackend(uid, localTickers, localUpdatedAt);
+      if (isCustomized && isSameList(serverTickers, DEFAULT_WATCHLIST_TICKERS) && !isSameList(localTickers, DEFAULT_WATCHLIST_TICKERS)) {
+        return await syncWatchlistWithBackend(uid, localTickers);
       }
     }
 
-    saveLocalWatchlistTickers(uid, serverTickers, false, serverUpdatedAt);
+    saveLocalWatchlistTickers(uid, serverTickers, false);
     return serverTickers;
   } catch {
     return getLocalWatchlistTickers(uid);
-  } finally {
-    if (timer) clearTimeout(timer);
   }
 }
 
@@ -1342,20 +1378,14 @@ export async function addToWatchlist(userId: string, ticker: string): Promise<st
   const res = await fetch(`${getApiBase()}/api/watchlist/add`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
-    body: JSON.stringify({
-      user_id: uid,
-      ticker: sym,
-      client_tickers: getLocalWatchlistTickers(uid),
-      client_updated_at: getLocalWatchlistUpdatedAt(uid) || undefined
-    })
+    body: JSON.stringify({ user_id: uid, ticker: sym })
   });
   const data = await res.json();
   if (!res.ok) {
     throw new Error(data.detail || "Failed to add stock to watchlist");
   }
   const tickers: string[] = Array.isArray(data?.tickers) ? data.tickers : [];
-  const updatedAt: string = typeof data?.updated_at === "string" ? data.updated_at : "";
-  saveLocalWatchlistTickers(uid, tickers, true, updatedAt);
+  saveLocalWatchlistTickers(uid, tickers, true);
   return tickers;
 }
 
@@ -1365,65 +1395,36 @@ export async function removeFromWatchlist(userId: string, ticker: string): Promi
   const res = await fetch(`${getApiBase()}/api/watchlist/remove`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
-    body: JSON.stringify({
-      user_id: uid,
-      ticker: sym,
-      client_tickers: getLocalWatchlistTickers(uid),
-      client_updated_at: getLocalWatchlistUpdatedAt(uid) || undefined
-    })
+    body: JSON.stringify({ user_id: uid, ticker: sym })
   });
   const data = await res.json();
   if (!res.ok) {
     throw new Error(data.detail || "Failed to remove stock from watchlist");
   }
   const tickers: string[] = Array.isArray(data?.tickers) ? data.tickers : [];
-  const updatedAt: string = typeof data?.updated_at === "string" ? data.updated_at : "";
-  saveLocalWatchlistTickers(uid, tickers, true, updatedAt);
+  saveLocalWatchlistTickers(uid, tickers, true);
   return tickers;
 }
 
-export async function syncWatchlistWithBackend(
-  userId: string,
-  tickers: string[],
-  clientUpdatedAt?: string
-): Promise<string[]> {
+export async function syncWatchlistWithBackend(userId: string, tickers: string[]): Promise<string[]> {
   const uid = userId || getPaperUserId();
-  const targetUpdatedAt = clientUpdatedAt || getLocalWatchlistUpdatedAt(uid) || "";
-  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort(), 12000) : null;
-  try {
-    const res = await fetch(`${getApiBase()}/api/watchlist/sync`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
-      body: JSON.stringify({
-        user_id: uid,
-        tickers,
-        client_updated_at: targetUpdatedAt || undefined
-      }),
-      signal: controller?.signal,
-    });
-    if (!res.ok) return tickers;
-    const data = await res.json();
-    const synced: string[] = Array.isArray(data?.tickers) ? data.tickers : tickers;
-    const updatedAt: string = typeof data?.updated_at === "string" ? data.updated_at : targetUpdatedAt;
-    const latestLocalUpdatedAt = getLocalWatchlistUpdatedAt(uid);
-    if (latestLocalUpdatedAt && updatedAt && latestLocalUpdatedAt > updatedAt) {
-      return getLocalWatchlistTickers(uid);
-    }
-    saveLocalWatchlistTickers(uid, synced, true, updatedAt);
-    return synced;
-  } catch {
-    return getLocalWatchlistTickers(uid);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+  const res = await fetch(`${getApiBase()}/api/watchlist/sync`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
+    body: JSON.stringify({ user_id: uid, tickers })
+  });
+  if (!res.ok) return tickers;
+  const data = await res.json();
+  const synced: string[] = Array.isArray(data?.tickers) ? data.tickers : tickers;
+  saveLocalWatchlistTickers(uid, synced, true);
+  return synced;
 }
 
-export async function resetPaperAccount(userId?: string): Promise<{ success: boolean; message: string; account: PaperAccount; transactions?: PaperTransaction[] }> {
+export async function resetPaperAccount(userId?: string): Promise<{ success: boolean; message: string; account: PaperAccount }> {
   const uid = userId || getPaperUserId();
   const res = await fetch(`${getApiBase()}/api/paper-trading/reset`, {
     method: "POST",
-    headers: { 
+    headers: {
       "Content-Type": "application/json",
       "Cache-Control": "no-cache"
     },
@@ -1435,7 +1436,7 @@ export async function resetPaperAccount(userId?: string): Promise<{ success: boo
   }
   if (data?.account) {
     saveLocalPaperAccount(uid, data.account);
-    saveLocalPaperTransactions(uid, Array.isArray(data.transactions) ? data.transactions : []);
+    saveLocalPaperTransactions(uid, []);
   }
   return data;
 }

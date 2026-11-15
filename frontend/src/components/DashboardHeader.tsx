@@ -87,12 +87,6 @@ export default function DashboardHeader({
     regimeColor = "var(--color-sell)";
   }
 
-  const formatLastSync = (ts?: number) => {
-    if (!ts || ts === 0) return "Active";
-    const d = new Date(ts * 1000);
-    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  };
-
   const niftyIsPositive = status.nifty_change >= 0;
   const bankNiftyIsPositive = (status.bank_nifty_change ?? 0) >= 0;
 
@@ -247,7 +241,7 @@ export default function DashboardHeader({
         </div>
       </div>
 
-      {/* Responsive Market Statistics: Desktop Inline Strip (>= 768px) -> 2-Column Mobile Grid (< 600px) with Full-Width DAY RANGE Row */}
+      {/* Market Statistics: NIFTY 50 & BANK NIFTY */}
       <div className="market-stats-grid">
         {/* NIFTY 50 */}
         <div className="market-stat-cell market-stat-primary">
@@ -288,116 +282,6 @@ export default function DashboardHeader({
             </div>
           </div>
         )}
-
-        {/* DAY RANGE (Own Full-Width Row Below 768px / 600px) */}
-        {status.nifty_open !== undefined && status.nifty_high !== undefined && status.nifty_low !== undefined && (
-          <div className="market-stat-cell market-stat-dayrange">
-            <span className="market-stat-label">
-              DAY RANGE<span className="market-stat-colon">:</span>
-            </span>
-            <div className="market-stat-dayrange-values">
-              <span><strong>O:</strong> {status.nifty_open.toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
-              <span><strong>H:</strong> {status.nifty_high.toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
-              <span><strong>L:</strong> {status.nifty_low.toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
-            </div>
-          </div>
-        )}
-
-        {/* PREVIOUS CLOSE */}
-        {status.nifty_prev_close !== undefined && (
-          <div className="market-stat-cell">
-            <span className="market-stat-label">
-              PREVIOUS CLOSE<span className="market-stat-colon">:</span>
-            </span>
-            <div className="market-stat-value-row">
-              <span className="market-stat-main-num">
-                {status.nifty_prev_close.toLocaleString(undefined, { maximumFractionDigits: 1 })}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* INDIA VIX */}
-        <div className="market-stat-cell">
-          <span className="market-stat-label">
-            INDIA VIX<span className="market-stat-colon">:</span>
-          </span>
-          <div className="market-stat-value-row">
-            <span
-              className="market-stat-main-num"
-              style={{ color: status.vix > 20 ? "var(--color-sell)" : "var(--color-buy)", fontWeight: "700" }}
-            >
-              {status.vix.toFixed(2)}
-            </span>
-          </div>
-        </div>
-
-        {/* NASDAQ */}
-        <div className="market-stat-cell">
-          <span className="market-stat-label">
-            NASDAQ<span className="market-stat-colon">:</span>
-          </span>
-          <div className="market-stat-value-row">
-            <span className="market-stat-main-num">
-              {status.nasdaq.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-            </span>
-          </div>
-        </div>
-
-        {/* S&P 500 */}
-        <div className="market-stat-cell">
-          <span className="market-stat-label">
-            S&amp;P 500<span className="market-stat-colon">:</span>
-          </span>
-          <div className="market-stat-value-row">
-            <span className="market-stat-main-num">
-              {status.sp500.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-            </span>
-          </div>
-        </div>
-
-        {/* DXY */}
-        <div className="market-stat-cell">
-          <span className="market-stat-label">
-            DXY<span className="market-stat-colon">:</span>
-          </span>
-          <div className="market-stat-value-row">
-            <span className="market-stat-main-num">{status.dxy.toFixed(2)}</span>
-          </div>
-        </div>
-
-        {/* US 10Y */}
-        <div className="market-stat-cell">
-          <span className="market-stat-label">
-            US 10Y<span className="market-stat-colon">:</span>
-          </span>
-          <div className="market-stat-value-row">
-            <span className="market-stat-main-num">{status.us10y.toFixed(2)}%</span>
-          </div>
-        </div>
-
-        {/* Timestamp / Source Metadata */}
-        <div className="market-stat-meta">
-          {(status.last_updated_formatted || status.last_updated) && (
-            <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-              <span>🕒 Updated: {status.last_updated_formatted || status.last_updated}</span>
-              {status.source && (
-                <span style={{ textTransform: "uppercase", fontSize: "9.5px", padding: "1px 5px", borderRadius: "3px", background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}>
-                  {status.source === "nse_live" ? "NSE Real-Time" : "NSE Official"}
-                </span>
-              )}
-              {status.is_stale && (
-                <span style={{ color: "var(--color-sell)", fontWeight: "600" }}>(Cached Session)</span>
-              )}
-            </div>
-          )}
-          {typeof status.last_synced === "number" && (
-            <div style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-              <span>Synced:</span>
-              <span style={{ color: "var(--color-text-primary)", fontWeight: "600" }}>{formatLastSync(status.last_synced)}</span>
-            </div>
-          )}
-        </div>
       </div>
     </header>
   );

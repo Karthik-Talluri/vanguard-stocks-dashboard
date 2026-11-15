@@ -15,12 +15,12 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
   const loadData = async () => {
     try {
       setLoading(true);
-      const res = await fetchFuturesOpportunities();
-      setOpportunities(res);
       setError("");
+      const res = await fetchFuturesOpportunities();
+      setOpportunities(Array.isArray(res) ? res : []);
     } catch (err: any) {
-      console.error(err);
-      setError("Failed to load futures opportunities from backend.");
+      console.error("[OpportunitiesDashboard] Error loading futures opportunities:", err);
+      setError(err?.message || "Failed to load futures opportunities from backend.");
     } finally {
       setLoading(false);
     }
@@ -40,17 +40,8 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-      {/* Header Summary Panel */}
-      <div className="glass-panel" style={{ padding: "clamp(12px, 3vw, 20px)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
-        <div style={{ minWidth: 0, flex: "1 1 240px" }}>
-          <h2 style={{ margin: 0, fontSize: "clamp(16px, 4.5vw, 20px)", lineHeight: 1.25, fontWeight: "800", color: "var(--color-text-primary)" }}>
-            ⚡ Real-Time Futures Income Opportunities
-          </h2>
-          <p style={{ margin: "4px 0 0 0", fontSize: "12px", color: "var(--color-text-secondary)" }}>
-            Ranked by our 6-agent consensus engine. Optimized for **Covered Calls (Buy Futures + Sell Call)** or **Short Calls (Sell Call only)** monthly yield harvest.
-          </p>
-        </div>
-
+      {/* Filter & Refresh Controls */}
+      <div className="glass-panel" style={{ padding: "clamp(10px, 2.5vw, 14px) clamp(12px, 3vw, 20px)", display: "flex", justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
         <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", maxWidth: "100%", minWidth: 0 }}>
           <span style={{ fontSize: "11px", color: "var(--color-text-muted)", fontWeight: "700", textTransform: "uppercase" }}>Filter Sector:</span>
           <select
@@ -101,8 +92,61 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
           Running 6-agent scoring matrix across Nifty 50 derivatives universe...
         </div>
       ) : error ? (
-        <div className="glass-panel" style={{ padding: "20px", color: "var(--color-sell)", textAlign: "center", fontWeight: "600" }}>
-          ⚠️ {error}
+        <div className="glass-panel" style={{ padding: "20px", color: "var(--color-sell)", textAlign: "center", fontWeight: "600", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
+          <div>⚠️ {error}</div>
+          <button
+            type="button"
+            onClick={loadData}
+            style={{
+              padding: "6px 14px",
+              background: "var(--accent-ml)",
+              color: "#ffffff",
+              border: "none",
+              borderRadius: "6px",
+              fontSize: "12px",
+              fontWeight: "700",
+              cursor: "pointer",
+              transition: "opacity 0.2s"
+            }}
+            onMouseOver={(e) => (e.currentTarget.style.opacity = "0.85")}
+            onMouseOut={(e) => (e.currentTarget.style.opacity = "1")}
+          >
+            Retry
+          </button>
+        </div>
+      ) : filteredOpp.length === 0 ? (
+        <div className="glass-panel" style={{ padding: "40px 20px", textAlign: "center", color: "var(--color-text-muted)" }}>
+          <div style={{ fontSize: "28px", marginBottom: "8px" }}>📊</div>
+          <div style={{ fontSize: "14px", fontWeight: "700", color: "var(--color-text-primary)", marginBottom: "4px" }}>
+            No Futures Opportunities Found
+          </div>
+          <div style={{ fontSize: "12px", marginBottom: "16px" }}>
+            {filterSector !== "ALL"
+              ? `No opportunities match the "${filterSector}" sector filter.`
+              : "No futures opportunities currently available. Click Refresh to reload from backend."}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (filterSector !== "ALL") setFilterSector("ALL");
+              loadData();
+            }}
+            style={{
+              padding: "6px 14px",
+              background: "var(--accent-ml)",
+              color: "#ffffff",
+              border: "none",
+              borderRadius: "6px",
+              fontSize: "12px",
+              fontWeight: "700",
+              cursor: "pointer",
+              transition: "opacity 0.2s"
+            }}
+            onMouseOver={(e) => (e.currentTarget.style.opacity = "0.85")}
+            onMouseOut={(e) => (e.currentTarget.style.opacity = "1")}
+          >
+            {filterSector !== "ALL" ? "Reset Filter & Refresh" : "Refresh List"}
+          </button>
         </div>
       ) : (
         <>
@@ -173,10 +217,10 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
                         {opp.pop}%
                       </td>
                       <td style={{ padding: "14px 16px", textAlign: "center", fontWeight: "700", color: "var(--color-text-primary)", fontSize: "13px" }}>
-                        {opp.expected_yield.toFixed(2)}%
+                        {(typeof opp.expected_yield === "number" ? opp.expected_yield : Number(opp.expected_yield || 0)).toFixed(2)}%
                       </td>
                       <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: "600", whiteSpace: "nowrap" }}>
-                        <div>₹{opp.price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
+                        <div>₹{(typeof opp.price === "number" ? opp.price : Number(opp.price || 0)).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
                         {typeof opp.futures_price === "number" && (
                           <div style={{ fontSize: "10px", color: "var(--accent-ml)", fontWeight: "700" }}>
                             FUT: ₹{opp.futures_price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
@@ -187,7 +231,7 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
                         {opp.strategy_type === "sell_call" ? (
                           <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                             <span style={{ color: "#ec4899", fontWeight: "700", fontSize: "11px", background: "rgba(236, 72, 153, 0.08)", padding: "2px 6px", borderRadius: "4px" }}>
-                              SELL {opp.option_contract.split(" ").slice(2).join(" ")} (Short Call)
+                              SELL {opp.option_contract ? opp.option_contract.split(" ").slice(2).join(" ") : opp.ticker} (Short Call)
                             </span>
                           </div>
                         ) : (
@@ -197,7 +241,7 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
                             </span>
                             <span style={{ fontSize: "11px", fontWeight: "700" }}>+</span>
                             <span style={{ color: "#ec4899", fontWeight: "700", fontSize: "11px", background: "rgba(236, 72, 153, 0.08)", padding: "2px 6px", borderRadius: "4px" }}>
-                              SELL {opp.option_contract.split(" ").slice(2).join(" ")}
+                              SELL {opp.option_contract ? opp.option_contract.split(" ").slice(2).join(" ") : opp.ticker}
                             </span>
                           </div>
                         )}
@@ -303,7 +347,7 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
                     <div>
                       <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>POP / YIELD</div>
                       <div style={{ fontSize: "clamp(11px, 3.2vw, 13px)", fontWeight: "800", color: "#10b981", marginTop: "2px" }}>
-                        {opp.pop}% • {opp.expected_yield.toFixed(1)}%
+                        {opp.pop}% • {(typeof opp.expected_yield === "number" ? opp.expected_yield : Number(opp.expected_yield || 0)).toFixed(1)}%
                       </div>
                     </div>
                     <div>
@@ -315,7 +359,7 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
                     <div>
                       <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>SPOT / FUT</div>
                       <div style={{ fontSize: "clamp(10px, 3vw, 12px)", fontWeight: "800", color: "var(--color-text-primary)", marginTop: "2px" }}>
-                        ₹{opp.price.toLocaleString("en-IN", { maximumFractionDigits: 1 })}
+                        ₹{(typeof opp.price === "number" ? opp.price : Number(opp.price || 0)).toLocaleString("en-IN", { maximumFractionDigits: 1 })}
                         {typeof opp.futures_price === "number" && (
                           <span style={{ display: "block", fontSize: "9.5px", color: "var(--accent-ml)" }}>
                             F: ₹{opp.futures_price.toLocaleString("en-IN", { maximumFractionDigits: 1 })}
@@ -330,7 +374,7 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
                     <div style={{ minWidth: 0 }}>
                       {opp.strategy_type === "sell_call" ? (
                         <span style={{ color: "#ec4899", fontWeight: "700", fontSize: "11px", background: "rgba(236, 72, 153, 0.08)", padding: "2px 6px", borderRadius: "4px", display: "inline-block" }}>
-                          SELL {opp.option_contract.split(" ").slice(2).join(" ")} (Short Call)
+                          SELL {opp.option_contract ? opp.option_contract.split(" ").slice(2).join(" ") : opp.ticker} (Short Call)
                         </span>
                       ) : (
                         <div style={{ display: "flex", gap: "4px", alignItems: "center", flexWrap: "wrap" }}>
@@ -339,7 +383,7 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
                           </span>
                           <span style={{ fontSize: "10px", fontWeight: "700" }}>+</span>
                           <span style={{ color: "#ec4899", fontWeight: "700", fontSize: "10px", background: "rgba(236, 72, 153, 0.08)", padding: "2px 6px", borderRadius: "4px" }}>
-                            SELL {opp.option_contract.split(" ").slice(2).join(" ")}
+                            SELL {opp.option_contract ? opp.option_contract.split(" ").slice(2).join(" ") : opp.ticker}
                           </span>
                         </div>
                       )}
