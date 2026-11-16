@@ -162,7 +162,6 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
                   <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", fontWeight: "700", textAlign: "center" }}>POP</th>
                   <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", fontWeight: "700", textAlign: "center" }}>Monthly Yield</th>
                   <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", fontWeight: "700", textAlign: "right" }}>Spot Price</th>
-                  <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", fontWeight: "700" }}>Optimized Strategy Setup</th>
                   <th style={{ padding: "12px 16px", color: "var(--color-text-muted)", fontWeight: "700", textAlign: "center" }}>Action</th>
                 </tr>
               </thead>
@@ -224,25 +223,6 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
                         {typeof opp.futures_price === "number" && (
                           <div style={{ fontSize: "10px", color: "var(--accent-ml)", fontWeight: "700" }}>
                             FUT: ₹{opp.futures_price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ padding: "14px 16px" }}>
-                        {opp.strategy_type === "sell_call" ? (
-                          <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                            <span style={{ color: "#ec4899", fontWeight: "700", fontSize: "11px", background: "rgba(236, 72, 153, 0.08)", padding: "2px 6px", borderRadius: "4px" }}>
-                              SELL {opp.option_contract ? opp.option_contract.split(" ").slice(2).join(" ") : opp.ticker} (Short Call)
-                            </span>
-                          </div>
-                        ) : (
-                          <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                            <span style={{ color: "#3b82f6", fontWeight: "700", fontSize: "11px", background: "rgba(59, 130, 246, 0.08)", padding: "2px 6px", borderRadius: "4px" }}>
-                              BUY FUT
-                            </span>
-                            <span style={{ fontSize: "11px", fontWeight: "700" }}>+</span>
-                            <span style={{ color: "#ec4899", fontWeight: "700", fontSize: "11px", background: "rgba(236, 72, 153, 0.08)", padding: "2px 6px", borderRadius: "4px" }}>
-                              SELL {opp.option_contract ? opp.option_contract.split(" ").slice(2).join(" ") : opp.ticker}
-                            </span>
                           </div>
                         )}
                       </td>
@@ -369,77 +349,58 @@ export default function OpportunitiesDashboard({ onSelectStock, onNavigateToTab 
                     </div>
                   </div>
 
-                  {/* Bottom Row: Strategy Setup & Actions */}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
-                    <div style={{ minWidth: 0 }}>
-                      {opp.strategy_type === "sell_call" ? (
-                        <span style={{ color: "#ec4899", fontWeight: "700", fontSize: "11px", background: "rgba(236, 72, 153, 0.08)", padding: "2px 6px", borderRadius: "4px", display: "inline-block" }}>
-                          SELL {opp.option_contract ? opp.option_contract.split(" ").slice(2).join(" ") : opp.ticker} (Short Call)
-                        </span>
-                      ) : (
-                        <div style={{ display: "flex", gap: "4px", alignItems: "center", flexWrap: "wrap" }}>
-                          <span style={{ color: "#3b82f6", fontWeight: "700", fontSize: "10px", background: "rgba(59, 130, 246, 0.08)", padding: "2px 6px", borderRadius: "4px" }}>
-                            BUY FUT
-                          </span>
-                          <span style={{ fontSize: "10px", fontWeight: "700" }}>+</span>
-                          <span style={{ color: "#ec4899", fontWeight: "700", fontSize: "10px", background: "rgba(236, 72, 153, 0.08)", padding: "2px 6px", borderRadius: "4px" }}>
-                            SELL {opp.option_contract ? opp.option_contract.split(" ").slice(2).join(" ") : opp.ticker}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (typeof window !== "undefined") {
-                            window.dispatchEvent(
-                              new CustomEvent("open-futures-trade", {
-                                detail: {
-                                  ticker: opp.ticker,
-                                  side: opp.strategy_type === "sell_call" ? "SELL" : "BUY",
-                                  lots: 1,
-                                },
-                              })
-                            );
-                          }
-                        }}
-                        style={{
-                          background: "rgba(79, 70, 229, 0.1)",
-                          border: "1px solid rgba(79, 70, 229, 0.35)",
-                          padding: "6px 10px",
-                          borderRadius: "6px",
-                          fontSize: "11px",
-                          fontWeight: "800",
-                          color: "var(--accent-ml)",
-                          cursor: "pointer"
-                        }}
-                      >
-                        ⚡ Trade FUT
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRowClick(opp.ticker);
-                        }}
-                        className="research-btn"
-                        style={{
-                          background: "none",
-                          border: "1px solid var(--border-subtle)",
-                          padding: "6px 12px",
-                          borderRadius: "6px",
-                          fontSize: "11px",
-                          fontWeight: "700",
-                          color: "var(--accent-ml)",
-                          cursor: "pointer",
-                          transition: "all 0.15s"
-                        }}
-                      >
-                        Research 🔬
-                      </button>
-                    </div>
+                  {/* Bottom Row: Actions */}
+                  <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "8px", marginTop: "2px" }}>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (typeof window !== "undefined") {
+                          window.dispatchEvent(
+                            new CustomEvent("open-futures-trade", {
+                              detail: {
+                                ticker: opp.ticker,
+                                side: opp.strategy_type === "sell_call" ? "SELL" : "BUY",
+                                lots: 1,
+                              },
+                            })
+                          );
+                        }
+                      }}
+                      style={{
+                        background: "rgba(79, 70, 229, 0.1)",
+                        border: "1px solid rgba(79, 70, 229, 0.35)",
+                        padding: "6px 12px",
+                        borderRadius: "6px",
+                        fontSize: "11px",
+                        fontWeight: "800",
+                        color: "var(--accent-ml)",
+                        cursor: "pointer"
+                      }}
+                    >
+                      ⚡ Trade FUT
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRowClick(opp.ticker);
+                      }}
+                      className="research-btn"
+                      style={{
+                        background: "none",
+                        border: "1px solid var(--border-subtle)",
+                        padding: "6px 12px",
+                        borderRadius: "6px",
+                        fontSize: "11px",
+                        fontWeight: "700",
+                        color: "var(--accent-ml)",
+                        cursor: "pointer",
+                        transition: "all 0.15s"
+                      }}
+                    >
+                      Research 🔬
+                    </button>
                   </div>
                 </div>
               );
