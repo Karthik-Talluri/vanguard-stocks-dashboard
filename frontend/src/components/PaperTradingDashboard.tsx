@@ -47,6 +47,13 @@ export default function PaperTradingDashboard({ stocks, initialAccount, onAccoun
   const closingIdsRef = useRef<Set<string>>(new Set());
   const cancellingIdsRef = useRef<Set<string>>(new Set());
 
+  // Portfolio Section Tabs: "holdings" | "positions"
+  const [portfolioTab, setPortfolioTab] = useState<"holdings" | "positions">("positions");
+
+  // Positions tab filter and search
+  const [positionsFilter, setPositionsFilter] = useState<"ALL" | "FUTURES" | "EQUITY">("ALL");
+  const [positionsSearch, setPositionsSearch] = useState<string>("");
+
   // Synchronize if active user is changed from another component
   useEffect(() => {
     const handleUserChanged = (e: any) => {
@@ -241,6 +248,41 @@ export default function PaperTradingDashboard({ stocks, initialAccount, onAccoun
   }
 
   const isProfit = (account?.total_pnl ?? 0) >= 0;
+  const holdingsCount = account?.holdings?.length ?? 0;
+  const futuresCount = account?.futures_positions?.length ?? 0;
+  const totalPositionsCount = futuresCount + holdingsCount;
+
+  // Filter positions for Positions Tab
+  const query = positionsSearch.trim().toUpperCase();
+  const filteredFutures = (account?.futures_positions || []).filter((pos) => {
+    if (positionsFilter === "EQUITY") return false;
+    if (!query) return true;
+    return (
+      pos.ticker.toUpperCase().includes(query) ||
+      pos.contract_symbol.toUpperCase().includes(query) ||
+      (pos.sector && pos.sector.toUpperCase().includes(query))
+    );
+  });
+
+  const filteredEquity = (account?.holdings || []).filter((h) => {
+    if (positionsFilter === "FUTURES") return false;
+    if (!query) return true;
+    return (
+      h.ticker.toUpperCase().includes(query) ||
+      (h.sector && h.sector.toUpperCase().includes(query))
+    );
+  });
+
+  // Calculate Positions Total P&L
+  const futuresUnrealized = account?.futures_unrealized_pnl ?? (account?.futures_positions || []).reduce((sum, p) => sum + p.unrealized_pnl, 0);
+  const equityUnrealized = account?.equity_unrealized_pnl ?? (account?.holdings || []).reduce((sum, h) => sum + h.unrealized_pnl, 0);
+  const positionsTotalPnl = positionsFilter === "FUTURES" 
+    ? futuresUnrealized 
+    : positionsFilter === "EQUITY" 
+      ? equityUnrealized 
+      : (account?.unrealized_pnl ?? (futuresUnrealized + equityUnrealized));
+
+  const positionsIsProfit = positionsTotalPnl >= 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }} className="animate-fade-in">
@@ -501,7 +543,7 @@ export default function PaperTradingDashboard({ stocks, initialAccount, onAccoun
         </div>
       )}
 
-      {/* Metrics Summary Grid (Mobile Responsive 2-col on small screens) */}
+      {/* Metrics Summary Grid */}
       <div className="metrics-auto-grid">
         {/* Total Portfolio Value */}
         <div className="glass-panel" style={{ padding: "12px 14px" }}>
@@ -538,7 +580,7 @@ export default function PaperTradingDashboard({ stocks, initialAccount, onAccoun
             ₹{(account?.total_invested ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
           </div>
           <div style={{ fontSize: "10px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
-            {account?.holdings_count ?? 0} eq • {account?.futures_count ?? (account?.futures_positions?.length ?? 0)} fut
+            {holdingsCount} eq • {futuresCount} fut
             {(account?.futures_margin_blocked ?? 0) > 0
               ? ` (Margin: ₹${(account?.futures_margin_blocked ?? 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })})`
               : ""}
@@ -579,729 +621,1276 @@ export default function PaperTradingDashboard({ stocks, initialAccount, onAccoun
             {(account?.unrealized_pnl ?? 0) >= 0 ? "+" : ""}₹{(account?.unrealized_pnl ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
           </div>
           <div style={{ fontSize: "10px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
-            {(account?.futures_positions?.length ?? 0) > 0
+            {futuresCount > 0
               ? `Eq ${(account?.equity_unrealized_pnl ?? 0) >= 0 ? "+" : ""}₹${(account?.equity_unrealized_pnl ?? 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })} • Fut ${(account?.futures_unrealized_pnl ?? 0) >= 0 ? "+" : ""}₹${(account?.futures_unrealized_pnl ?? 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`
               : "Open positions MTM"}
           </div>
         </div>
       </div>
 
-      {/* Holdings Section */}
+      {/* PORTFOLIO SECTION WITH TWO TABS: 1. HOLDINGS, 2. POSITIONS */}
       <div className="glass-panel" style={{ padding: "clamp(12px, 3vw, 18px)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px", marginBottom: "14px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <h3 style={{ fontSize: "15px", fontWeight: "800", color: "var(--color-text-primary)", margin: 0 }}>Active Simulated Holdings</h3>
-            <span style={{ fontSize: "11px", color: "var(--color-text-muted)" }}>({account?.holdings.length ?? 0})</span>
-          </div>
-          <div style={{ fontSize: "11px", color: "var(--color-text-muted)" }}>
-            Holdings Value: <strong style={{ color: "var(--color-text-primary)" }}>₹{(account?.portfolio_market_value ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</strong>
-          </div>
-        </div>
-
-        {(!account || account.holdings.length === 0) ? (
+        {/* Top Tab Bar: Holdings & Positions */}
+        <div style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "12px",
+          marginBottom: "16px",
+          borderBottom: "1px solid var(--border-subtle)",
+          paddingBottom: "12px"
+        }}>
+          {/* Segmented Tab Controls */}
           <div style={{
-            padding: "36px 16px",
-            textAlign: "center",
-            background: "rgba(0, 0, 0, 0.02)",
+            display: "inline-flex",
+            alignItems: "center",
+            background: "rgba(0, 0, 0, 0.2)",
             borderRadius: "10px",
-            border: "1px dashed var(--border-subtle)"
+            padding: "4px",
+            border: "1px solid var(--border-subtle)",
+            gap: "4px"
           }}>
-            <div style={{ fontSize: "28px", marginBottom: "6px" }}>📭</div>
-            <div style={{ fontSize: "14px", fontWeight: "800", color: "var(--color-text-primary)" }}>No Active Paper Positions</div>
-            <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "4px", maxWidth: "420px", margin: "4px auto 14px auto" }}>
-              You have ₹{(account?.available_cash ?? 100000).toLocaleString("en-IN", { minimumFractionDigits: 2 })} virtual cash. Buy any stock to start building your simulated portfolio.
-            </div>
             <button
-              onClick={() => handleOpenTrade("RELIANCE", "BUY")}
+              type="button"
+              onClick={() => setPortfolioTab("holdings")}
               style={{
                 padding: "8px 18px",
                 borderRadius: "8px",
-                background: "var(--color-buy)",
-                border: "none",
-                color: "#ffffff",
-                fontWeight: "800",
                 fontSize: "13px",
+                fontWeight: "800",
+                border: "none",
                 cursor: "pointer",
-                boxShadow: "0 4px 12px rgba(5, 150, 105, 0.3)"
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                background: portfolioTab === "holdings" ? "var(--accent-ml)" : "transparent",
+                color: portfolioTab === "holdings" ? "#ffffff" : "var(--color-text-secondary)",
+                boxShadow: portfolioTab === "holdings" ? "0 2px 8px rgba(79, 70, 229, 0.35)" : "none",
+                transition: "all 0.15s ease"
               }}
             >
-              + Buy First Stock
+              <span>📁</span>
+              <span>Holdings</span>
+              <span style={{
+                fontSize: "11px",
+                padding: "1px 6px",
+                borderRadius: "10px",
+                background: portfolioTab === "holdings" ? "rgba(255, 255, 255, 0.25)" : "rgba(255, 255, 255, 0.08)",
+                color: portfolioTab === "holdings" ? "#ffffff" : "var(--color-text-muted)"
+              }}>
+                {holdingsCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPortfolioTab("positions")}
+              style={{
+                padding: "8px 18px",
+                borderRadius: "8px",
+                fontSize: "13px",
+                fontWeight: "800",
+                border: "none",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                background: portfolioTab === "positions" ? "var(--accent-ml)" : "transparent",
+                color: portfolioTab === "positions" ? "#ffffff" : "var(--color-text-secondary)",
+                boxShadow: portfolioTab === "positions" ? "0 2px 8px rgba(79, 70, 229, 0.35)" : "none",
+                transition: "all 0.15s ease"
+              }}
+            >
+              <span>⚡</span>
+              <span>Positions</span>
+              <span style={{
+                fontSize: "11px",
+                padding: "1px 6px",
+                borderRadius: "10px",
+                background: portfolioTab === "positions" ? "rgba(255, 255, 255, 0.25)" : "rgba(255, 255, 255, 0.08)",
+                color: portfolioTab === "positions" ? "#ffffff" : "var(--color-text-muted)"
+              }}>
+                {totalPositionsCount}
+              </span>
             </button>
           </div>
-        ) : (
-          <>
-            {/* Desktop Table View */}
-            <div className="table-desktop-view table-responsive-wrapper">
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                <thead>
-                  <tr style={{ borderBottom: "1px solid var(--border-subtle)", color: "var(--color-text-secondary)", fontSize: "11px", textTransform: "uppercase" }}>
-                    <th style={{ padding: "10px 14px", textAlign: "left" }}>Stock Symbol</th>
-                    <th style={{ padding: "10px 14px", textAlign: "right" }}>Shares Owned</th>
-                    <th style={{ padding: "10px 14px", textAlign: "right" }}>Avg Buy Price</th>
-                    <th style={{ padding: "10px 14px", textAlign: "right" }}>Current LTP</th>
-                    <th style={{ padding: "10px 14px", textAlign: "right" }}>Invested Amount</th>
-                    <th style={{ padding: "10px 14px", textAlign: "right" }}>Current Value</th>
-                    <th style={{ padding: "10px 14px", textAlign: "right" }}>Unrealized P&L</th>
-                    <th style={{ padding: "10px 14px", textAlign: "center" }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
+
+          {/* Quick Header Actions based on Active Tab */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            {portfolioTab === "holdings" ? (
+              <button
+                type="button"
+                onClick={() => handleOpenTrade(stocks[0]?.ticker || "RELIANCE", "BUY")}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: "6px",
+                  background: "rgba(5, 150, 105, 0.12)",
+                  border: "1px solid var(--color-buy)",
+                  color: "var(--color-buy)",
+                  fontSize: "12px",
+                  fontWeight: "800",
+                  cursor: "pointer"
+                }}
+              >
+                + Buy Stock (CNC)
+              </button>
+            ) : (
+              <div style={{ display: "flex", gap: "6px" }}>
+                <button
+                  type="button"
+                  onClick={() => handleOpenFuturesTrade("HINDALCO", "BUY", 1)}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: "6px",
+                    background: "rgba(79, 70, 229, 0.12)",
+                    border: "1px solid var(--accent-ml)",
+                    color: "var(--accent-ml)",
+                    fontSize: "12px",
+                    fontWeight: "800",
+                    cursor: "pointer"
+                  }}
+                >
+                  + Trade Futures (NRML)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenTrade(stocks[0]?.ticker || "RELIANCE", "BUY")}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: "6px",
+                    background: "rgba(5, 150, 105, 0.1)",
+                    border: "1px solid var(--color-buy)",
+                    color: "var(--color-buy)",
+                    fontSize: "12px",
+                    fontWeight: "700",
+                    cursor: "pointer"
+                  }}
+                >
+                  + Buy Stock
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* TAB 1: HOLDINGS (Displays existing account.holdings data only)             */}
+        {/* ========================================================================= */}
+        {portfolioTab === "holdings" && (
+          <div className="animate-fade-in">
+            {/* Holdings Sub-header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px", marginBottom: "14px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <h3 style={{ fontSize: "15px", fontWeight: "800", color: "var(--color-text-primary)", margin: 0 }}>
+                  Active Simulated Holdings
+                </h3>
+                <span style={{ fontSize: "11px", color: "var(--color-text-muted)" }}>({holdingsCount})</span>
+              </div>
+              <div style={{ fontSize: "11px", color: "var(--color-text-muted)" }}>
+                Holdings Value: <strong style={{ color: "var(--color-text-primary)" }}>₹{(account?.portfolio_market_value ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</strong>
+              </div>
+            </div>
+
+            {(!account || account.holdings.length === 0) ? (
+              <div style={{
+                padding: "36px 16px",
+                textAlign: "center",
+                background: "rgba(0, 0, 0, 0.02)",
+                borderRadius: "10px",
+                border: "1px dashed var(--border-subtle)"
+              }}>
+                <div style={{ fontSize: "28px", marginBottom: "6px" }}>📁</div>
+                <div style={{ fontSize: "14px", fontWeight: "800", color: "var(--color-text-primary)" }}>No Active Holdings</div>
+                <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "4px", maxWidth: "420px", margin: "4px auto 14px auto" }}>
+                  You have ₹{(account?.available_cash ?? 100000).toLocaleString("en-IN", { minimumFractionDigits: 2 })} virtual cash. Buy any stock to start building your simulated portfolio.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleOpenTrade(stocks[0]?.ticker || "RELIANCE", "BUY")}
+                  style={{
+                    padding: "8px 18px",
+                    borderRadius: "8px",
+                    background: "var(--color-buy)",
+                    border: "none",
+                    color: "#ffffff",
+                    fontWeight: "800",
+                    fontSize: "13px",
+                    cursor: "pointer",
+                    boxShadow: "0 4px 12px rgba(5, 150, 105, 0.3)"
+                  }}
+                >
+                  + Buy First Stock
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Desktop Table View for Holdings */}
+                <div className="table-desktop-view table-responsive-wrapper">
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid var(--border-subtle)", color: "var(--color-text-secondary)", fontSize: "11px", textTransform: "uppercase" }}>
+                        <th style={{ padding: "10px 14px", textAlign: "left" }}>Stock Symbol</th>
+                        <th style={{ padding: "10px 14px", textAlign: "center" }}>Product</th>
+                        <th style={{ padding: "10px 14px", textAlign: "right" }}>Shares Owned</th>
+                        <th style={{ padding: "10px 14px", textAlign: "right" }}>Avg Buy Price</th>
+                        <th style={{ padding: "10px 14px", textAlign: "right" }}>Current LTP</th>
+                        <th style={{ padding: "10px 14px", textAlign: "right" }}>Invested Amount</th>
+                        <th style={{ padding: "10px 14px", textAlign: "right" }}>Current Value</th>
+                        <th style={{ padding: "10px 14px", textAlign: "right" }}>Unrealized P&L</th>
+                        <th style={{ padding: "10px 14px", textAlign: "center" }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {account.holdings.map((h: PaperHolding) => {
+                        const isPos = h.unrealized_pnl >= 0;
+                        return (
+                          <tr 
+                            key={h.ticker} 
+                            style={{ borderBottom: "1px solid var(--border-subtle)", transition: "background 0.15s" }}
+                            className="table-row-hover"
+                          >
+                            <td style={{ padding: "12px 14px" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <span 
+                                  onClick={() => onSelectStock && onSelectStock(h.ticker)}
+                                  style={{ fontWeight: "800", color: "var(--accent-ml)", cursor: "pointer" }}
+                                >
+                                  {h.ticker}
+                                </span>
+                                <span style={{ fontSize: "10px", color: "var(--color-text-muted)", background: "rgba(0, 0, 0, 0.04)", padding: "1px 6px", borderRadius: "4px" }}>
+                                  {h.sector}
+                                </span>
+                              </div>
+                            </td>
+                            <td style={{ padding: "12px 14px", textAlign: "center" }}>
+                              <span style={{
+                                padding: "2px 6px",
+                                borderRadius: "4px",
+                                fontSize: "10px",
+                                fontWeight: "800",
+                                background: "rgba(59, 130, 246, 0.12)",
+                                color: "#3b82f6",
+                                border: "1px solid rgba(59, 130, 246, 0.3)"
+                              }}>
+                                CNC
+                              </span>
+                            </td>
+                            <td style={{ padding: "12px 14px", textAlign: "right", fontWeight: "700" }}>
+                              {h.quantity}
+                            </td>
+                            <td style={{ padding: "12px 14px", textAlign: "right", whiteSpace: "nowrap" }}>
+                              ₹{h.avg_buy_price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: "12px 14px", textAlign: "right", whiteSpace: "nowrap" }}>
+                              <div style={{ fontWeight: "700", color: "var(--color-text-primary)" }}>
+                                ₹{h.current_price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </div>
+                              <div style={{ fontSize: "10px", color: h.day_change_pct >= 0 ? "var(--color-buy)" : "var(--color-sell)" }}>
+                                {h.day_change_pct >= 0 ? "+" : ""}{h.day_change_pct.toFixed(2)}%
+                              </div>
+                            </td>
+                            <td style={{ padding: "12px 14px", textAlign: "right", whiteSpace: "nowrap" }}>
+                              ₹{h.total_invested.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: "12px 14px", textAlign: "right", fontWeight: "700", whiteSpace: "nowrap" }}>
+                              ₹{h.market_value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: "12px 14px", textAlign: "right", whiteSpace: "nowrap" }}>
+                              <div style={{ fontWeight: "800", color: isPos ? "var(--color-buy)" : "var(--color-sell)" }}>
+                                {isPos ? "+" : ""}₹{h.unrealized_pnl.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </div>
+                              <div style={{ fontSize: "10px", color: isPos ? "var(--color-buy)" : "var(--color-sell)", fontWeight: "600" }}>
+                                ({isPos ? "+" : ""}{h.unrealized_pnl_pct.toFixed(2)}%)
+                              </div>
+                            </td>
+                            <td style={{ padding: "12px 14px", textAlign: "center" }}>
+                              <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenTrade(h.ticker, "BUY")}
+                                  style={{
+                                    padding: "4px 8px",
+                                    borderRadius: "4px",
+                                    background: "rgba(5, 150, 105, 0.12)",
+                                    border: "1px solid var(--color-buy)",
+                                    color: "var(--color-buy)",
+                                    fontSize: "11px",
+                                    fontWeight: "700",
+                                    cursor: "pointer"
+                                  }}
+                                >
+                                  + Buy More
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenTrade(h.ticker, "SELL")}
+                                  style={{
+                                    padding: "4px 8px",
+                                    borderRadius: "4px",
+                                    background: "rgba(220, 38, 38, 0.12)",
+                                    border: "1px solid var(--color-sell)",
+                                    color: "var(--color-sell)",
+                                    fontSize: "11px",
+                                    fontWeight: "700",
+                                    cursor: "pointer"
+                                  }}
+                                >
+                                  Sell
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Cards View for Holdings */}
+                <div className="cards-mobile-view" style={{ flexDirection: "column", gap: "10px" }}>
                   {account.holdings.map((h: PaperHolding) => {
                     const isPos = h.unrealized_pnl >= 0;
                     return (
-                      <tr 
-                        key={h.ticker} 
-                        style={{ borderBottom: "1px solid var(--border-subtle)", transition: "background 0.15s" }}
-                        className="table-row-hover"
+                      <div 
+                        key={h.ticker}
+                        className="glass-panel"
+                        style={{
+                          padding: "14px 16px",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "10px",
+                          borderRadius: "12px",
+                          border: "1px solid var(--border-subtle)",
+                          background: "var(--bg-card)"
+                        }}
                       >
-                        <td style={{ padding: "12px 14px" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                            <span 
-                              onClick={() => onSelectStock && onSelectStock(h.ticker)}
-                              style={{ fontWeight: "800", color: "var(--accent-ml)", cursor: "pointer" }}
-                            >
-                              {h.ticker}
-                            </span>
-                            <span style={{ fontSize: "10px", color: "var(--color-text-muted)", background: "rgba(0, 0, 0, 0.04)", padding: "1px 6px", borderRadius: "4px" }}>
-                              {h.sector}
-                            </span>
-                          </div>
-                        </td>
-                        <td style={{ padding: "12px 14px", textAlign: "right", fontWeight: "700" }}>
-                          {h.quantity}
-                        </td>
-                        <td style={{ padding: "12px 14px", textAlign: "right", whiteSpace: "nowrap" }}>
-                          ₹{h.avg_buy_price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </td>
-                        <td style={{ padding: "12px 14px", textAlign: "right", whiteSpace: "nowrap" }}>
-                          <div style={{ fontWeight: "700", color: "var(--color-text-primary)" }}>
-                            ₹{h.current_price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </div>
-                          <div style={{ fontSize: "10px", color: h.day_change_pct >= 0 ? "var(--color-buy)" : "var(--color-sell)" }}>
-                            {h.day_change_pct >= 0 ? "+" : ""}{h.day_change_pct.toFixed(2)}%
-                          </div>
-                        </td>
-                        <td style={{ padding: "12px 14px", textAlign: "right", whiteSpace: "nowrap" }}>
-                          ₹{h.total_invested.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </td>
-                        <td style={{ padding: "12px 14px", textAlign: "right", fontWeight: "700", whiteSpace: "nowrap" }}>
-                          ₹{h.market_value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </td>
-                        <td style={{ padding: "12px 14px", textAlign: "right", whiteSpace: "nowrap" }}>
-                          <div style={{ fontWeight: "800", color: isPos ? "var(--color-buy)" : "var(--color-sell)" }}>
-                            {isPos ? "+" : ""}₹{h.unrealized_pnl.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </div>
-                          <div style={{ fontSize: "10px", color: isPos ? "var(--color-buy)" : "var(--color-sell)", fontWeight: "600" }}>
-                            ({isPos ? "+" : ""}{h.unrealized_pnl_pct.toFixed(2)}%)
-                          </div>
-                        </td>
-                        <td style={{ padding: "12px 14px", textAlign: "center" }}>
-                          <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
-                            <button
-                              onClick={() => handleOpenTrade(h.ticker, "BUY")}
-                              style={{
-                                padding: "4px 8px",
+                        {/* Top Row: Symbol, Sector, CNC Badge and P&L */}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "8px" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                              <span 
+                                onClick={() => onSelectStock && onSelectStock(h.ticker)}
+                                style={{ fontSize: "16px", fontWeight: "900", color: "var(--accent-ml)", cursor: "pointer" }}
+                              >
+                                {h.ticker}
+                              </span>
+                              <span style={{
+                                padding: "1px 5px",
                                 borderRadius: "4px",
-                                background: "rgba(5, 150, 105, 0.12)",
-                                border: "1px solid var(--color-buy)",
-                                color: "var(--color-buy)",
-                                fontSize: "11px",
-                                fontWeight: "700",
-                                cursor: "pointer"
-                              }}
-                            >
-                              + Buy More
-                            </button>
-                            <button
-                              onClick={() => handleOpenTrade(h.ticker, "SELL")}
-                              style={{
-                                padding: "4px 8px",
-                                borderRadius: "4px",
-                                background: "rgba(220, 38, 38, 0.12)",
-                                border: "1px solid var(--color-sell)",
-                                color: "var(--color-sell)",
-                                fontSize: "11px",
-                                fontWeight: "700",
-                                cursor: "pointer"
-                              }}
-                            >
-                              Sell
-                            </button>
+                                fontSize: "9.5px",
+                                fontWeight: "800",
+                                background: "rgba(59, 130, 246, 0.12)",
+                                color: "#3b82f6"
+                              }}>
+                                CNC
+                              </span>
+                              <span style={{ fontSize: "10px", color: "var(--color-text-muted)", background: "rgba(0,0,0,0.04)", padding: "1px 6px", borderRadius: "4px" }}>
+                                {h.sector}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
+                              {h.quantity} shares • Avg: ₹{h.avg_buy_price.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                            </div>
                           </div>
-                        </td>
-                      </tr>
+
+                          <div style={{ textAlign: "right" }}>
+                            <div style={{
+                              fontSize: "12px",
+                              fontWeight: "800",
+                              color: isPos ? "var(--color-buy)" : "var(--color-sell)",
+                              background: isPos ? "rgba(5, 150, 105, 0.08)" : "rgba(220, 38, 38, 0.08)",
+                              padding: "2px 8px",
+                              borderRadius: "4px",
+                              display: "inline-block"
+                            }}>
+                              {isPos ? "▲ +" : "▼ "}₹{Math.abs(h.unrealized_pnl).toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                            </div>
+                            <div style={{ fontSize: "10px", color: isPos ? "var(--color-buy)" : "var(--color-sell)", fontWeight: "700", marginTop: "1px" }}>
+                              ({isPos ? "+" : ""}{h.unrealized_pnl_pct.toFixed(2)}%)
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Middle Row: LTP, Invested, Current Value */}
+                        <div style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                          gap: "6px",
+                          background: "rgba(0,0,0,0.02)",
+                          padding: "8px 8px",
+                          borderRadius: "8px",
+                          textAlign: "center"
+                        }}>
+                          <div>
+                            <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>LTP</div>
+                            <div style={{ fontSize: "12px", fontWeight: "800", color: "var(--color-text-primary)", marginTop: "1px" }}>
+                              ₹{h.current_price.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>INVESTED</div>
+                            <div style={{ fontSize: "12px", fontWeight: "700", color: "var(--color-text-secondary)", marginTop: "1px" }}>
+                              ₹{h.total_invested.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>VALUE</div>
+                            <div style={{ fontSize: "12px", fontWeight: "800", color: "var(--color-text-primary)", marginTop: "1px" }}>
+                              ₹{h.market_value.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Bottom Row: Buy More & Sell Buttons */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "2px" }}>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenTrade(h.ticker, "BUY")}
+                            style={{
+                              padding: "8px",
+                              borderRadius: "8px",
+                              background: "rgba(5, 150, 105, 0.08)",
+                              border: "1px solid rgba(5, 150, 105, 0.3)",
+                              color: "var(--color-buy)",
+                              fontSize: "12px",
+                              fontWeight: "800",
+                              cursor: "pointer",
+                              minHeight: "40px"
+                            }}
+                          >
+                            + Buy More
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenTrade(h.ticker, "SELL")}
+                            style={{
+                              padding: "8px",
+                              borderRadius: "8px",
+                              background: "rgba(220, 38, 38, 0.08)",
+                              border: "1px solid rgba(220, 38, 38, 0.3)",
+                              color: "var(--color-sell)",
+                              fontSize: "12px",
+                              fontWeight: "800",
+                              cursor: "pointer",
+                              minHeight: "40px"
+                            }}
+                          >
+                            Sell
+                          </button>
+                        </div>
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile Cards View for Holdings */}
-            <div className="cards-mobile-view" style={{ flexDirection: "column", gap: "10px" }}>
-              {account.holdings.map((h: PaperHolding) => {
-                const isPos = h.unrealized_pnl >= 0;
-                return (
-                  <div 
-                    key={h.ticker}
-                    className="glass-panel"
-                    style={{
-                      padding: "14px 16px",
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "10px",
-                      borderRadius: "12px",
-                      border: "1px solid var(--border-subtle)",
-                      background: "var(--bg-card)"
-                    }}
-                  >
-                    {/* Top Row: Symbol, Sector and P&L Badge */}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "8px" }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-                          <span 
-                            onClick={() => onSelectStock && onSelectStock(h.ticker)}
-                            style={{ fontSize: "16px", fontWeight: "900", color: "var(--accent-ml)", cursor: "pointer" }}
-                          >
-                            {h.ticker}
-                          </span>
-                          <span style={{ fontSize: "10px", color: "var(--color-text-muted)", background: "rgba(0,0,0,0.04)", padding: "1px 6px", borderRadius: "4px" }}>
-                            {h.sector}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
-                          {h.quantity} shares • Avg: ₹{h.avg_buy_price.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
-                        </div>
-                      </div>
-
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{
-                          fontSize: "12px",
-                          fontWeight: "800",
-                          color: isPos ? "var(--color-buy)" : "var(--color-sell)",
-                          background: isPos ? "rgba(5, 150, 105, 0.08)" : "rgba(220, 38, 38, 0.08)",
-                          padding: "2px 8px",
-                          borderRadius: "4px",
-                          display: "inline-block"
-                        }}>
-                          {isPos ? "▲ +" : "▼ "}₹{Math.abs(h.unrealized_pnl).toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
-                        </div>
-                        <div style={{ fontSize: "10px", color: isPos ? "var(--color-buy)" : "var(--color-sell)", fontWeight: "700", marginTop: "1px" }}>
-                          ({isPos ? "+" : ""}{h.unrealized_pnl_pct.toFixed(2)}%)
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Middle Row: LTP, Invested, Current Value */}
-                    <div style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                      gap: "6px",
-                      background: "rgba(0,0,0,0.02)",
-                      padding: "8px 8px",
-                      borderRadius: "8px",
-                      textAlign: "center"
-                    }}>
-                      <div>
-                        <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>LTP</div>
-                        <div style={{ fontSize: "12px", fontWeight: "800", color: "var(--color-text-primary)", marginTop: "1px" }}>
-                          ₹{h.current_price.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>INVESTED</div>
-                        <div style={{ fontSize: "12px", fontWeight: "700", color: "var(--color-text-secondary)", marginTop: "1px" }}>
-                          ₹{h.total_invested.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>VALUE</div>
-                        <div style={{ fontSize: "12px", fontWeight: "800", color: "var(--color-text-primary)", marginTop: "1px" }}>
-                          ₹{h.market_value.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Bottom Row: Buy More & Sell Buttons */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "2px" }}>
-                      <button
-                        onClick={() => handleOpenTrade(h.ticker, "BUY")}
-                        style={{
-                          padding: "8px",
-                          borderRadius: "8px",
-                          background: "rgba(5, 150, 105, 0.08)",
-                          border: "1px solid rgba(5, 150, 105, 0.3)",
-                          color: "var(--color-buy)",
-                          fontSize: "12px",
-                          fontWeight: "800",
-                          cursor: "pointer",
-                          minHeight: "40px"
-                        }}
-                      >
-                        + Buy More
-                      </button>
-                      <button
-                        onClick={() => handleOpenTrade(h.ticker, "SELL")}
-                        style={{
-                          padding: "8px",
-                          borderRadius: "8px",
-                          background: "rgba(220, 38, 38, 0.08)",
-                          border: "1px solid rgba(220, 38, 38, 0.3)",
-                          color: "var(--color-sell)",
-                          fontSize: "12px",
-                          fontWeight: "800",
-                          cursor: "pointer",
-                          minHeight: "40px"
-                        }}
-                      >
-                        Sell
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </>
+                </div>
+              </>
+            )}
+          </div>
         )}
-      </div>
 
-      {/* Active Futures Portfolio Section */}
-      <div className="glass-panel" style={{ padding: "clamp(12px, 3vw, 18px)", border: "1px solid rgba(79, 70, 229, 0.25)" }} data-testid="futures-portfolio-section">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px", marginBottom: "14px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-            <h3 style={{ fontSize: "15px", fontWeight: "800", color: "var(--color-text-primary)", margin: 0 }}>
-              ⚡ Active Futures Positions
-            </h3>
-            <span style={{ fontSize: "11px", color: "var(--color-text-muted)" }}>
-              ({account?.futures_positions?.length ?? 0})
-            </span>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", fontSize: "11px", color: "var(--color-text-muted)" }}>
-            <span>
-              Margin Blocked: <strong style={{ color: "var(--color-text-primary)" }}>₹{(account?.futures_margin_blocked ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</strong>
-            </span>
-            <span>
-              Futures MTM:{" "}
-              <strong style={{ color: (account?.futures_unrealized_pnl ?? 0) >= 0 ? "var(--color-buy)" : "var(--color-sell)" }}>
-                {(account?.futures_unrealized_pnl ?? 0) >= 0 ? "+" : ""}₹{(account?.futures_unrealized_pnl ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
-              </strong>
-            </span>
-            <button
-              type="button"
-              onClick={() => handleOpenFuturesTrade("HINDALCO", "BUY", 1)}
-              style={{
-                padding: "5px 10px",
-                borderRadius: "6px",
-                background: "var(--accent-ml)",
-                border: "none",
-                color: "#ffffff",
-                fontSize: "11px",
-                fontWeight: "800",
-                cursor: "pointer"
-              }}
-            >
-              + Trade Futures
-            </button>
-          </div>
-        </div>
-
-        {futuresBanner && (
-          <div
-            style={{
-              marginBottom: "12px",
-              padding: "10px 12px",
-              borderRadius: "8px",
-              fontSize: "12px",
-              fontWeight: "600",
-              background: futuresBanner.type === "success" ? "rgba(5, 150, 105, 0.1)" : "rgba(220, 38, 38, 0.1)",
-              border: `1px solid ${futuresBanner.type === "success" ? "var(--color-buy)" : "var(--color-sell)"}`,
-              color: futuresBanner.type === "success" ? "var(--color-buy)" : "var(--color-sell)",
+        {/* ========================================================================= */}
+        {/* TAB 2: POSITIONS (Displays active paper trades: Futures + Equity positions) */}
+        {/* ========================================================================= */}
+        {portfolioTab === "positions" && (
+          <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            {/* Total Positions P&L Hero Card (Zerodha / Groww Inspired) */}
+            <div style={{
+              padding: "16px",
+              borderRadius: "12px",
+              background: positionsIsProfit 
+                ? "linear-gradient(135deg, rgba(5, 150, 105, 0.12) 0%, rgba(15, 23, 42, 0.04) 100%)" 
+                : "linear-gradient(135deg, rgba(220, 38, 38, 0.12) 0%, rgba(15, 23, 42, 0.04) 100%)",
+              border: positionsIsProfit ? "1px solid rgba(5, 150, 105, 0.3)" : "1px solid rgba(220, 38, 38, 0.3)",
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
-              gap: "8px"
-            }}
-          >
-            <span>{futuresBanner.type === "success" ? "✅ " : "⚠️ "}{futuresBanner.message}</span>
-            <button
-              type="button"
-              onClick={() => setFuturesBanner(null)}
-              style={{ background: "transparent", border: "none", padding: "0 4px", fontSize: "12px", cursor: "pointer", color: "inherit" }}
-            >
-              ✕
-            </button>
-          </div>
-        )}
+              flexWrap: "wrap",
+              gap: "12px"
+            }}>
+              <div>
+                <div style={{ fontSize: "11px", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--color-text-secondary)" }}>
+                  Total Open Positions P&amp;L
+                </div>
+                <div style={{
+                  fontSize: "clamp(20px, 5vw, 26px)",
+                  fontWeight: "900",
+                  color: positionsIsProfit ? "var(--color-buy)" : "var(--color-sell)",
+                  marginTop: "4px"
+                }}>
+                  {positionsIsProfit ? "+₹" : "-₹"}{Math.abs(positionsTotalPnl).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
 
-        {(!account?.futures_positions || account.futures_positions.length === 0) ? (
-          <div style={{
-            padding: "30px 16px",
-            textAlign: "center",
-            background: "rgba(0, 0, 0, 0.02)",
-            borderRadius: "10px",
-            border: "1px dashed var(--border-subtle)"
-          }}>
-            <div style={{ fontSize: "24px", marginBottom: "6px" }}>📜</div>
-            <div style={{ fontSize: "14px", fontWeight: "800", color: "var(--color-text-primary)" }}>No Active Futures Positions</div>
-            <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", maxWidth: "440px", margin: "4px auto 14px auto" }}>
-              Trade simulated NSE Stock Futures using exchange-defined lot sizes (e.g., HINDALCO 1 lot = 700 shares) with 5% virtual margin.
+              {/* Status Breakdown Pills */}
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <div style={{
+                  padding: "6px 10px",
+                  borderRadius: "8px",
+                  background: "rgba(0, 0, 0, 0.2)",
+                  border: "1px solid var(--border-subtle)",
+                  fontSize: "11px"
+                }}>
+                  <span style={{ color: "var(--color-text-muted)" }}>Margin Blocked: </span>
+                  <strong style={{ color: "var(--color-text-primary)" }}>₹{(account?.futures_margin_blocked ?? 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}</strong>
+                </div>
+
+                <div style={{
+                  padding: "6px 10px",
+                  borderRadius: "8px",
+                  background: "rgba(0, 0, 0, 0.2)",
+                  border: "1px solid var(--border-subtle)",
+                  fontSize: "11px"
+                }}>
+                  <span style={{ color: "var(--color-text-muted)" }}>Open Positions: </span>
+                  <strong style={{ color: "var(--color-text-primary)" }}>{filteredFutures.length + filteredEquity.length}</strong>
+                </div>
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={() => handleOpenFuturesTrade("HINDALCO", "BUY", 1)}
-              style={{
-                padding: "8px 18px",
-                borderRadius: "8px",
-                background: "var(--accent-ml)",
-                border: "none",
-                color: "#ffffff",
-                fontWeight: "800",
-                fontSize: "13px",
-                cursor: "pointer",
-                boxShadow: "0 4px 12px rgba(79, 70, 229, 0.3)"
-              }}
-            >
-              + Trade First Futures Contract
-            </button>
-          </div>
-        ) : (
-          <>
-            {/* Desktop Futures Table */}
-            <div className="table-desktop-view table-responsive-wrapper">
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12.5px" }}>
-                <thead>
-                  <tr style={{ borderBottom: "1px solid var(--border-subtle)", color: "var(--color-text-secondary)", fontSize: "10.5px", textTransform: "uppercase" }}>
-                    <th style={{ padding: "10px 12px", textAlign: "left" }}>Stock &amp; Contract</th>
-                    <th style={{ padding: "10px 12px", textAlign: "center" }}>Side</th>
-                    <th style={{ padding: "10px 12px", textAlign: "right" }}>Lots &amp; Lot Size</th>
-                    <th style={{ padding: "10px 12px", textAlign: "right" }}>Total Shares</th>
-                    <th style={{ padding: "10px 12px", textAlign: "right" }}>Entry Price</th>
-                    <th style={{ padding: "10px 12px", textAlign: "right" }}>Current FUT</th>
-                    <th style={{ padding: "10px 12px", textAlign: "right" }}>Margin Blocked</th>
-                    <th style={{ padding: "10px 12px", textAlign: "right" }}>Unrealized P&amp;L</th>
-                    <th style={{ padding: "10px 12px", textAlign: "center" }}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {account.futures_positions.map((pos: FuturesPosition) => {
+
+            {/* Filter and Search Bar */}
+            <div style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "10px",
+              padding: "4px 0"
+            }}>
+              {/* Product Filter Pills */}
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                {[
+                  { id: "ALL", label: `All (${totalPositionsCount})` },
+                  { id: "FUTURES", label: `Futures (${futuresCount})` },
+                  { id: "EQUITY", label: `Equity (${holdingsCount})` },
+                ].map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setPositionsFilter(f.id as any)}
+                    style={{
+                      padding: "5px 12px",
+                      borderRadius: "6px",
+                      fontSize: "11.5px",
+                      fontWeight: "700",
+                      border: positionsFilter === f.id ? "1px solid var(--accent-ml)" : "1px solid var(--border-subtle)",
+                      background: positionsFilter === f.id ? "rgba(79, 70, 229, 0.15)" : "rgba(0, 0, 0, 0.02)",
+                      color: positionsFilter === f.id ? "var(--accent-ml)" : "var(--color-text-secondary)",
+                      cursor: "pointer",
+                      transition: "all 0.15s ease"
+                    }}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Search input */}
+              <div style={{ flex: "1 1 180px", maxWidth: "260px" }}>
+                <input
+                  type="text"
+                  placeholder="🔍 Search symbol or contract..."
+                  value={positionsSearch}
+                  onChange={(e) => setPositionsSearch(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "6px 10px",
+                    borderRadius: "6px",
+                    fontSize: "12px",
+                    background: "var(--bg-card)",
+                    border: "1px solid var(--border-subtle)",
+                    color: "var(--color-text-primary)",
+                    outline: "none"
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Futures Closing/Cancellation Banner */}
+            {futuresBanner && (
+              <div
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  fontSize: "12px",
+                  fontWeight: "600",
+                  background: futuresBanner.type === "success" ? "rgba(5, 150, 105, 0.1)" : "rgba(220, 38, 38, 0.1)",
+                  border: `1px solid ${futuresBanner.type === "success" ? "var(--color-buy)" : "var(--color-sell)"}`,
+                  color: futuresBanner.type === "success" ? "var(--color-buy)" : "var(--color-sell)",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: "8px"
+                }}
+              >
+                <span>{futuresBanner.type === "success" ? "✅ " : "⚠️ "}{futuresBanner.message}</span>
+                <button
+                  type="button"
+                  onClick={() => setFuturesBanner(null)}
+                  style={{ background: "transparent", border: "none", padding: "0 4px", fontSize: "12px", cursor: "pointer", color: "inherit" }}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {/* POSITIONS LIST */}
+            {filteredFutures.length === 0 && filteredEquity.length === 0 ? (
+              <div style={{
+                padding: "36px 16px",
+                textAlign: "center",
+                background: "rgba(0, 0, 0, 0.02)",
+                borderRadius: "10px",
+                border: "1px dashed var(--border-subtle)"
+              }}>
+                <div style={{ fontSize: "28px", marginBottom: "6px" }}>⚡</div>
+                <div style={{ fontSize: "14px", fontWeight: "800", color: "var(--color-text-primary)" }}>
+                  No Open Positions {positionsFilter !== "ALL" ? `in ${positionsFilter}` : ""}
+                </div>
+                <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "4px", maxWidth: "440px", margin: "4px auto 14px auto" }}>
+                  Trade simulated NSE Stock Futures with 5% virtual margin or Buy Equity shares to establish positions.
+                </div>
+                <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenFuturesTrade("HINDALCO", "BUY", 1)}
+                    style={{
+                      padding: "8px 18px",
+                      borderRadius: "8px",
+                      background: "var(--accent-ml)",
+                      border: "none",
+                      color: "#ffffff",
+                      fontWeight: "800",
+                      fontSize: "13px",
+                      cursor: "pointer",
+                      boxShadow: "0 4px 12px rgba(79, 70, 229, 0.3)"
+                    }}
+                  >
+                    + Trade Futures Contract
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenTrade(stocks[0]?.ticker || "RELIANCE", "BUY")}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: "8px",
+                      background: "rgba(5, 150, 105, 0.12)",
+                      border: "1px solid var(--color-buy)",
+                      color: "var(--color-buy)",
+                      fontWeight: "800",
+                      fontSize: "13px",
+                      cursor: "pointer"
+                    }}
+                  >
+                    + Buy Stock
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Desktop Positions Table */}
+                <div className="table-desktop-view table-responsive-wrapper">
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12.5px" }}>
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid var(--border-subtle)", color: "var(--color-text-secondary)", fontSize: "10.5px", textTransform: "uppercase" }}>
+                        <th style={{ padding: "10px 12px", textAlign: "left" }}>Product &amp; Symbol</th>
+                        <th style={{ padding: "10px 12px", textAlign: "center" }}>Side</th>
+                        <th style={{ padding: "10px 12px", textAlign: "right" }}>Quantity / Lots</th>
+                        <th style={{ padding: "10px 12px", textAlign: "right" }}>Avg Price</th>
+                        <th style={{ padding: "10px 12px", textAlign: "right" }}>LTP</th>
+                        <th style={{ padding: "10px 12px", textAlign: "right" }}>Margin / Invested</th>
+                        <th style={{ padding: "10px 12px", textAlign: "right" }}>Unrealized P&amp;L</th>
+                        <th style={{ padding: "10px 12px", textAlign: "center" }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* 1. Futures Positions */}
+                      {filteredFutures.map((pos: FuturesPosition) => {
+                        const isPos = pos.unrealized_pnl >= 0;
+                        const isLong = pos.side === "BUY";
+                        const isClosing = closingIds.has(pos.id);
+                        return (
+                          <tr key={pos.id} style={{ borderBottom: "1px solid var(--border-subtle)" }} className="table-row-hover">
+                            <td style={{ padding: "12px" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                <span style={{
+                                  padding: "1px 5px",
+                                  borderRadius: "4px",
+                                  fontSize: "9.5px",
+                                  fontWeight: "800",
+                                  background: "rgba(79, 70, 229, 0.15)",
+                                  color: "var(--accent-ml)",
+                                  border: "1px solid rgba(79, 70, 229, 0.3)"
+                                }}>
+                                  NRML
+                                </span>
+                                <span
+                                  onClick={() => onSelectStock && onSelectStock(pos.ticker)}
+                                  style={{ fontWeight: "800", color: "var(--color-text-primary)", cursor: "pointer" }}
+                                >
+                                  {pos.contract_symbol}
+                                </span>
+                                <span style={{ fontSize: "9.5px", fontWeight: "700", color: "var(--color-text-muted)", background: "rgba(0,0,0,0.04)", padding: "1px 5px", borderRadius: "4px" }}>
+                                  {pos.exchange}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: "10.5px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
+                                {pos.ticker} • Expiry {pos.expiry_formatted}
+                              </div>
+                            </td>
+                            <td style={{ padding: "12px", textAlign: "center" }}>
+                              <span
+                                style={{
+                                  padding: "2px 8px",
+                                  borderRadius: "4px",
+                                  fontSize: "10px",
+                                  fontWeight: "800",
+                                  background: isLong ? "rgba(5, 150, 105, 0.12)" : "rgba(220, 38, 38, 0.12)",
+                                  color: isLong ? "var(--color-buy)" : "var(--color-sell)",
+                                  border: `1px solid ${isLong ? "var(--color-buy)" : "var(--color-sell)"}`,
+                                }}
+                              >
+                                {pos.side}
+                              </span>
+                            </td>
+                            <td style={{ padding: "12px", textAlign: "right", whiteSpace: "nowrap" }}>
+                              <span style={{ fontWeight: "800" }}>{pos.total_quantity.toLocaleString("en-IN")} sh</span>
+                              <div style={{ fontSize: "10px", color: "var(--color-text-muted)" }}>
+                                {pos.lots} lot{pos.lots === 1 ? "" : "s"} × {pos.lot_size.toLocaleString("en-IN")}
+                              </div>
+                            </td>
+                            <td style={{ padding: "12px", textAlign: "right", whiteSpace: "nowrap" }}>
+                              ₹{pos.entry_price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: "12px", textAlign: "right", fontWeight: "700", whiteSpace: "nowrap" }}>
+                              ₹{pos.current_futures_price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: "12px", textAlign: "right", fontWeight: "700", whiteSpace: "nowrap" }}>
+                              ₹{pos.margin_blocked.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: "12px", textAlign: "right", whiteSpace: "nowrap" }}>
+                              <div style={{ fontWeight: "800", color: isPos ? "var(--color-buy)" : "var(--color-sell)" }}>
+                                {isPos ? "+" : ""}₹{pos.unrealized_pnl.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </div>
+                              <div style={{ fontSize: "10px", color: isPos ? "var(--color-buy)" : "var(--color-sell)", fontWeight: "700" }}>
+                                ({isPos ? "+" : ""}{pos.unrealized_pnl_pct.toFixed(2)}%)
+                              </div>
+                            </td>
+                            <td style={{ padding: "12px", textAlign: "center" }}>
+                              <button
+                                type="button"
+                                disabled={isClosing}
+                                onClick={() => handleCloseFutures(pos)}
+                                style={{
+                                  padding: "5px 10px",
+                                  borderRadius: "6px",
+                                  background: "rgba(220, 38, 38, 0.1)",
+                                  border: "1px solid var(--color-sell)",
+                                  color: "var(--color-sell)",
+                                  fontSize: "11px",
+                                  fontWeight: "800",
+                                  cursor: isClosing ? "not-allowed" : "pointer",
+                                  opacity: isClosing ? 0.6 : 1,
+                                  whiteSpace: "nowrap"
+                                }}
+                              >
+                                {isClosing ? "Closing..." : "Close Position"}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+
+                      {/* 2. Equity Positions (CNC Delivery) */}
+                      {filteredEquity.map((h: PaperHolding) => {
+                        const isPos = h.unrealized_pnl >= 0;
+                        return (
+                          <tr key={`EQ-${h.ticker}`} style={{ borderBottom: "1px solid var(--border-subtle)" }} className="table-row-hover">
+                            <td style={{ padding: "12px" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                <span style={{
+                                  padding: "1px 5px",
+                                  borderRadius: "4px",
+                                  fontSize: "9.5px",
+                                  fontWeight: "800",
+                                  background: "rgba(59, 130, 246, 0.12)",
+                                  color: "#3b82f6",
+                                  border: "1px solid rgba(59, 130, 246, 0.3)"
+                                }}>
+                                  CNC
+                                </span>
+                                <span
+                                  onClick={() => onSelectStock && onSelectStock(h.ticker)}
+                                  style={{ fontWeight: "800", color: "var(--accent-ml)", cursor: "pointer" }}
+                                >
+                                  {h.ticker}
+                                </span>
+                                <span style={{ fontSize: "9.5px", fontWeight: "700", color: "var(--color-text-muted)", background: "rgba(0,0,0,0.04)", padding: "1px 5px", borderRadius: "4px" }}>
+                                  {h.sector}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: "10.5px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
+                                Equity Cash &amp; Carry
+                              </div>
+                            </td>
+                            <td style={{ padding: "12px", textAlign: "center" }}>
+                              <span style={{
+                                padding: "2px 8px",
+                                borderRadius: "4px",
+                                fontSize: "10px",
+                                fontWeight: "800",
+                                background: "rgba(5, 150, 105, 0.12)",
+                                color: "var(--color-buy)",
+                                border: "1px solid var(--color-buy)"
+                              }}>
+                                BUY
+                              </span>
+                            </td>
+                            <td style={{ padding: "12px", textAlign: "right", fontWeight: "800" }}>
+                              {h.quantity} sh
+                            </td>
+                            <td style={{ padding: "12px", textAlign: "right", whiteSpace: "nowrap" }}>
+                              ₹{h.avg_buy_price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: "12px", textAlign: "right", fontWeight: "700", whiteSpace: "nowrap" }}>
+                              ₹{h.current_price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: "12px", textAlign: "right", fontWeight: "700", whiteSpace: "nowrap" }}>
+                              ₹{h.total_invested.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: "12px", textAlign: "right", whiteSpace: "nowrap" }}>
+                              <div style={{ fontWeight: "800", color: isPos ? "var(--color-buy)" : "var(--color-sell)" }}>
+                                {isPos ? "+" : ""}₹{h.unrealized_pnl.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </div>
+                              <div style={{ fontSize: "10px", color: isPos ? "var(--color-buy)" : "var(--color-sell)", fontWeight: "700" }}>
+                                ({isPos ? "+" : ""}{h.unrealized_pnl_pct.toFixed(2)}%)
+                              </div>
+                            </td>
+                            <td style={{ padding: "12px", textAlign: "center" }}>
+                              <div style={{ display: "flex", gap: "4px", justifyContent: "center" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenTrade(h.ticker, "SELL")}
+                                  style={{
+                                    padding: "4px 8px",
+                                    borderRadius: "4px",
+                                    background: "rgba(220, 38, 38, 0.12)",
+                                    border: "1px solid var(--color-sell)",
+                                    color: "var(--color-sell)",
+                                    fontSize: "11px",
+                                    fontWeight: "700",
+                                    cursor: "pointer"
+                                  }}
+                                >
+                                  Sell
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenTrade(h.ticker, "BUY")}
+                                  style={{
+                                    padding: "4px 8px",
+                                    borderRadius: "4px",
+                                    background: "rgba(5, 150, 105, 0.12)",
+                                    border: "1px solid var(--color-buy)",
+                                    color: "var(--color-buy)",
+                                    fontSize: "11px",
+                                    fontWeight: "700",
+                                    cursor: "pointer"
+                                  }}
+                                >
+                                  + Buy
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Cards View for Positions */}
+                <div className="cards-mobile-view" style={{ flexDirection: "column", gap: "10px" }}>
+                  {/* Futures Mobile Cards */}
+                  {filteredFutures.map((pos: FuturesPosition) => {
                     const isPos = pos.unrealized_pnl >= 0;
                     const isLong = pos.side === "BUY";
                     const isClosing = closingIds.has(pos.id);
                     return (
-                      <tr key={pos.id} style={{ borderBottom: "1px solid var(--border-subtle)" }} className="table-row-hover">
-                        <td style={{ padding: "12px" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                            <span
-                              onClick={() => onSelectStock && onSelectStock(pos.ticker)}
-                              style={{ fontWeight: "800", color: "var(--accent-ml)", cursor: "pointer" }}
+                      <div
+                        key={pos.id}
+                        className="glass-panel"
+                        style={{
+                          padding: "14px 16px",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "10px",
+                          borderRadius: "12px",
+                          border: "1px solid rgba(79, 70, 229, 0.2)",
+                          background: "var(--bg-card)"
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "8px" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                              <span style={{
+                                padding: "1px 5px",
+                                borderRadius: "4px",
+                                fontSize: "9.5px",
+                                fontWeight: "800",
+                                background: "rgba(79, 70, 229, 0.15)",
+                                color: "var(--accent-ml)"
+                              }}>
+                                NRML
+                              </span>
+                              <span
+                                style={{
+                                  padding: "2px 6px",
+                                  borderRadius: "4px",
+                                  fontSize: "10px",
+                                  fontWeight: "800",
+                                  background: isLong ? "rgba(5, 150, 105, 0.12)" : "rgba(220, 38, 38, 0.12)",
+                                  color: isLong ? "var(--color-buy)" : "var(--color-sell)",
+                                }}
+                              >
+                                {pos.side}
+                              </span>
+                              <span
+                                onClick={() => onSelectStock && onSelectStock(pos.ticker)}
+                                style={{ fontSize: "15px", fontWeight: "900", color: "var(--color-text-primary)", cursor: "pointer" }}
+                              >
+                                {pos.contract_symbol}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
+                              {pos.lots} lot{pos.lots === 1 ? "" : "s"} × {pos.lot_size.toLocaleString("en-IN")} = <strong>{pos.total_quantity.toLocaleString("en-IN")} sh</strong> • Exp {pos.expiry_formatted}
+                            </div>
+                          </div>
+
+                          <div style={{ textAlign: "right" }}>
+                            <div
+                              style={{
+                                fontSize: "12px",
+                                fontWeight: "800",
+                                color: isPos ? "var(--color-buy)" : "var(--color-sell)",
+                                background: isPos ? "rgba(5, 150, 105, 0.08)" : "rgba(220, 38, 38, 0.08)",
+                                padding: "2px 8px",
+                                borderRadius: "4px",
+                                display: "inline-block"
+                              }}
                             >
-                              {pos.ticker}
-                            </span>
-                            <span style={{ fontSize: "9.5px", fontWeight: "700", color: "var(--color-text-muted)", background: "rgba(0,0,0,0.04)", padding: "1px 5px", borderRadius: "4px" }}>
-                              {pos.exchange}
-                            </span>
+                              {isPos ? "▲ +" : "▼ "}₹{Math.abs(pos.unrealized_pnl).toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                            </div>
+                            <div style={{ fontSize: "10px", color: isPos ? "var(--color-buy)" : "var(--color-sell)", fontWeight: "700", marginTop: "1px" }}>
+                              ({isPos ? "+" : ""}{pos.unrealized_pnl_pct.toFixed(2)}%)
+                            </div>
                           </div>
-                          <div style={{ fontSize: "10.5px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
-                            {pos.contract_symbol} • Exp {pos.expiry_formatted}
-                          </div>
-                        </td>
-                        <td style={{ padding: "12px", textAlign: "center" }}>
-                          <span
-                            style={{
-                              padding: "2px 8px",
-                              borderRadius: "4px",
-                              fontSize: "10px",
-                              fontWeight: "800",
-                              background: isLong ? "rgba(5, 150, 105, 0.12)" : "rgba(220, 38, 38, 0.12)",
-                              color: isLong ? "var(--color-buy)" : "var(--color-sell)",
-                              border: `1px solid ${isLong ? "var(--color-buy)" : "var(--color-sell)"}`,
-                            }}
-                          >
-                            {pos.side}
-                          </span>
-                        </td>
-                        <td style={{ padding: "12px", textAlign: "right", whiteSpace: "nowrap" }}>
-                          <span style={{ fontWeight: "800" }}>{pos.lots} lot{pos.lots === 1 ? "" : "s"}</span>
-                          <div style={{ fontSize: "10px", color: "var(--color-text-muted)" }}>
-                            Lot: {pos.lot_size.toLocaleString("en-IN")}
-                          </div>
-                        </td>
-                        <td style={{ padding: "12px", textAlign: "right", fontWeight: "800" }}>
-                          {pos.total_quantity.toLocaleString("en-IN")}
-                        </td>
-                        <td style={{ padding: "12px", textAlign: "right", whiteSpace: "nowrap" }}>
-                          ₹{pos.entry_price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </td>
-                        <td style={{ padding: "12px", textAlign: "right", fontWeight: "700", whiteSpace: "nowrap" }}>
-                          ₹{pos.current_futures_price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </td>
-                        <td style={{ padding: "12px", textAlign: "right", fontWeight: "700", whiteSpace: "nowrap" }}>
-                          ₹{pos.margin_blocked.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </td>
-                        <td style={{ padding: "12px", textAlign: "right", whiteSpace: "nowrap" }}>
-                          <div style={{ fontWeight: "800", color: isPos ? "var(--color-buy)" : "var(--color-sell)" }}>
-                            {isPos ? "+" : ""}₹{pos.unrealized_pnl.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </div>
-                          <div style={{ fontSize: "10px", color: isPos ? "var(--color-buy)" : "var(--color-sell)", fontWeight: "700" }}>
-                            ({isPos ? "+" : ""}{pos.unrealized_pnl_pct.toFixed(2)}% on margin)
-                          </div>
-                        </td>
-                        <td style={{ padding: "12px", textAlign: "center" }}>
-                          <button
-                            type="button"
-                            disabled={isClosing}
-                            onClick={() => handleCloseFutures(pos)}
-                            style={{
-                              padding: "5px 10px",
-                              borderRadius: "6px",
-                              background: "rgba(220, 38, 38, 0.1)",
-                              border: "1px solid var(--color-sell)",
-                              color: "var(--color-sell)",
-                              fontSize: "11px",
-                              fontWeight: "800",
-                              cursor: isClosing ? "not-allowed" : "pointer",
-                              opacity: isClosing ? 0.6 : 1,
-                              whiteSpace: "nowrap"
-                            }}
-                          >
-                            {isClosing ? "Closing..." : "Close Position"}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile Cards View for Futures Positions */}
-            <div className="cards-mobile-view" style={{ flexDirection: "column", gap: "10px" }}>
-              {account.futures_positions.map((pos: FuturesPosition) => {
-                const isPos = pos.unrealized_pnl >= 0;
-                const isLong = pos.side === "BUY";
-                const isClosing = closingIds.has(pos.id);
-                return (
-                  <div
-                    key={pos.id}
-                    className="glass-panel"
-                    style={{
-                      padding: "14px 16px",
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "10px",
-                      borderRadius: "12px",
-                      border: "1px solid rgba(79, 70, 229, 0.2)",
-                      background: "var(--bg-card)"
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "8px" }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-                          <span
-                            onClick={() => onSelectStock && onSelectStock(pos.ticker)}
-                            style={{ fontSize: "16px", fontWeight: "900", color: "var(--accent-ml)", cursor: "pointer" }}
-                          >
-                            {pos.ticker}
-                          </span>
-                          <span
-                            style={{
-                              padding: "2px 6px",
-                              borderRadius: "4px",
-                              fontSize: "10px",
-                              fontWeight: "800",
-                              background: isLong ? "rgba(5, 150, 105, 0.12)" : "rgba(220, 38, 38, 0.12)",
-                              color: isLong ? "var(--color-buy)" : "var(--color-sell)",
-                            }}
-                          >
-                            {pos.side} FUT
-                          </span>
-                          <span style={{ fontSize: "10px", color: "var(--color-text-muted)" }}>{pos.expiry_formatted}</span>
                         </div>
-                        <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
-                          {pos.lots} lot{pos.lots === 1 ? "" : "s"} × {pos.lot_size.toLocaleString("en-IN")} = <strong>{pos.total_quantity.toLocaleString("en-IN")} shares</strong>
-                        </div>
-                      </div>
 
-                      <div style={{ textAlign: "right" }}>
                         <div
                           style={{
-                            fontSize: "12px",
-                            fontWeight: "800",
-                            color: isPos ? "var(--color-buy)" : "var(--color-sell)",
-                            background: isPos ? "rgba(5, 150, 105, 0.08)" : "rgba(220, 38, 38, 0.08)",
-                            padding: "2px 8px",
-                            borderRadius: "4px",
-                            display: "inline-block"
+                            display: "grid",
+                            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                            gap: "6px",
+                            background: "rgba(0,0,0,0.02)",
+                            padding: "8px",
+                            borderRadius: "8px",
+                            textAlign: "center"
                           }}
                         >
-                          {isPos ? "▲ +" : "▼ "}₹{Math.abs(pos.unrealized_pnl).toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                          <div>
+                            <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>AVG PRICE</div>
+                            <div style={{ fontSize: "12px", fontWeight: "800", color: "var(--color-text-primary)", marginTop: "1px" }}>
+                              ₹{pos.entry_price.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>FUT LTP</div>
+                            <div style={{ fontSize: "12px", fontWeight: "800", color: "var(--accent-ml)", marginTop: "1px" }}>
+                              ₹{pos.current_futures_price.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>MARGIN</div>
+                            <div style={{ fontSize: "12px", fontWeight: "800", color: "var(--color-text-primary)", marginTop: "1px" }}>
+                              ₹{pos.margin_blocked.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                            </div>
+                          </div>
                         </div>
-                        <div style={{ fontSize: "10px", color: isPos ? "var(--color-buy)" : "var(--color-sell)", fontWeight: "700", marginTop: "1px" }}>
-                          ({isPos ? "+" : ""}{pos.unrealized_pnl_pct.toFixed(2)}%)
-                        </div>
-                      </div>
-                    </div>
 
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                        gap: "6px",
-                        background: "rgba(0,0,0,0.02)",
-                        padding: "8px",
-                        borderRadius: "8px",
-                        textAlign: "center"
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>ENTRY FUT</div>
-                        <div style={{ fontSize: "12px", fontWeight: "800", color: "var(--color-text-primary)", marginTop: "1px" }}>
-                          ₹{pos.entry_price.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
-                        </div>
+                        <button
+                          type="button"
+                          disabled={isClosing}
+                          onClick={() => handleCloseFutures(pos)}
+                          style={{
+                            width: "100%",
+                            padding: "9px",
+                            borderRadius: "8px",
+                            background: "rgba(220, 38, 38, 0.08)",
+                            border: "1px solid rgba(220, 38, 38, 0.35)",
+                            color: "var(--color-sell)",
+                            fontSize: "12px",
+                            fontWeight: "800",
+                            cursor: isClosing ? "not-allowed" : "pointer",
+                            minHeight: "40px",
+                            opacity: isClosing ? 0.6 : 1
+                          }}
+                        >
+                          {isClosing ? "Closing Position..." : `Close Position (${pos.total_quantity.toLocaleString("en-IN")} sh)`}
+                        </button>
                       </div>
-                      <div>
-                        <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>CURR FUT</div>
-                        <div style={{ fontSize: "12px", fontWeight: "800", color: "var(--accent-ml)", marginTop: "1px" }}>
-                          ₹{pos.current_futures_price.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>MARGIN</div>
-                        <div style={{ fontSize: "12px", fontWeight: "800", color: "var(--color-text-primary)", marginTop: "1px" }}>
-                          ₹{pos.margin_blocked.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
-                        </div>
-                      </div>
-                    </div>
+                    );
+                  })}
 
-                    <button
-                      type="button"
-                      disabled={isClosing}
-                      onClick={() => handleCloseFutures(pos)}
-                      style={{
-                        width: "100%",
-                        padding: "9px",
-                        borderRadius: "8px",
-                        background: "rgba(220, 38, 38, 0.08)",
-                        border: "1px solid rgba(220, 38, 38, 0.35)",
-                        color: "var(--color-sell)",
-                        fontSize: "12px",
-                        fontWeight: "800",
-                        cursor: isClosing ? "not-allowed" : "pointer",
-                        minHeight: "40px",
-                        opacity: isClosing ? 0.6 : 1
-                      }}
-                    >
-                      {isClosing ? "Closing Position..." : `Close Position (${pos.total_quantity.toLocaleString("en-IN")} sh)`}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
+                  {/* Equity Mobile Cards */}
+                  {filteredEquity.map((h: PaperHolding) => {
+                    const isPos = h.unrealized_pnl >= 0;
+                    return (
+                      <div
+                        key={`EQ-MOB-${h.ticker}`}
+                        className="glass-panel"
+                        style={{
+                          padding: "14px 16px",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "10px",
+                          borderRadius: "12px",
+                          border: "1px solid rgba(59, 130, 246, 0.25)",
+                          background: "var(--bg-card)"
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "8px" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                              <span style={{
+                                padding: "1px 5px",
+                                borderRadius: "4px",
+                                fontSize: "9.5px",
+                                fontWeight: "800",
+                                background: "rgba(59, 130, 246, 0.12)",
+                                color: "#3b82f6"
+                              }}>
+                                CNC
+                              </span>
+                              <span style={{
+                                padding: "2px 6px",
+                                borderRadius: "4px",
+                                fontSize: "10px",
+                                fontWeight: "800",
+                                background: "rgba(5, 150, 105, 0.12)",
+                                color: "var(--color-buy)"
+                              }}>
+                                BUY
+                              </span>
+                              <span
+                                onClick={() => onSelectStock && onSelectStock(h.ticker)}
+                                style={{ fontSize: "15px", fontWeight: "900", color: "var(--color-text-primary)", cursor: "pointer" }}
+                              >
+                                {h.ticker}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
+                              {h.quantity} shares • {h.sector}
+                            </div>
+                          </div>
 
-        {/* Pending Limit Futures Orders (If Any) */}
-        {(account?.pending_futures_orders?.length ?? 0) > 0 && (
-          <div style={{ marginTop: "16px", paddingTop: "14px", borderTop: "1px solid var(--border-subtle)" }}>
-            <h4 style={{ fontSize: "13px", fontWeight: "800", color: "var(--color-text-primary)", marginBottom: "8px" }}>
-              ⏳ Pending Limit Futures Orders ({account?.pending_futures_orders?.length ?? 0})
-            </h4>
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              {account!.pending_futures_orders!.map((ord: PendingFuturesOrder) => {
-                const isCancelling = cancellingIds.has(ord.id);
-                return (
-                  <div
-                    key={ord.id}
-                    style={{
-                      padding: "10px 12px",
-                      borderRadius: "8px",
-                      background: "rgba(217, 119, 6, 0.06)",
-                      border: "1px solid rgba(217, 119, 6, 0.3)",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      flexWrap: "wrap",
-                      gap: "8px",
-                      fontSize: "12px"
-                    }}
-                  >
-                    <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-                        <strong style={{ color: "var(--color-text-primary)" }}>{ord.contract_symbol}</strong>
-                        <span style={{ fontSize: "10px", fontWeight: "800", color: ord.side === "BUY" ? "var(--color-buy)" : "var(--color-sell)" }}>
-                          {ord.side} LIMIT
+                          <div style={{ textAlign: "right" }}>
+                            <div
+                              style={{
+                                fontSize: "12px",
+                                fontWeight: "800",
+                                color: isPos ? "var(--color-buy)" : "var(--color-sell)",
+                                background: isPos ? "rgba(5, 150, 105, 0.08)" : "rgba(220, 38, 38, 0.08)",
+                                padding: "2px 8px",
+                                borderRadius: "4px",
+                                display: "inline-block"
+                              }}
+                            >
+                              {isPos ? "▲ +" : "▼ "}₹{Math.abs(h.unrealized_pnl).toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                            </div>
+                            <div style={{ fontSize: "10px", color: isPos ? "var(--color-buy)" : "var(--color-sell)", fontWeight: "700", marginTop: "1px" }}>
+                              ({isPos ? "+" : ""}{h.unrealized_pnl_pct.toFixed(2)}%)
+                            </div>
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                            gap: "6px",
+                            background: "rgba(0,0,0,0.02)",
+                            padding: "8px",
+                            borderRadius: "8px",
+                            textAlign: "center"
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>AVG PRICE</div>
+                            <div style={{ fontSize: "12px", fontWeight: "800", color: "var(--color-text-primary)", marginTop: "1px" }}>
+                              ₹{h.avg_buy_price.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>LTP</div>
+                            <div style={{ fontSize: "12px", fontWeight: "800", color: "var(--color-text-primary)", marginTop: "1px" }}>
+                              ₹{h.current_price.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: "9px", color: "var(--color-text-muted)", fontWeight: "700" }}>INVESTED</div>
+                            <div style={{ fontSize: "12px", fontWeight: "800", color: "var(--color-text-primary)", marginTop: "1px" }}>
+                              ₹{h.total_invested.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "2px" }}>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenTrade(h.ticker, "SELL")}
+                            style={{
+                              padding: "8px",
+                              borderRadius: "8px",
+                              background: "rgba(220, 38, 38, 0.08)",
+                              border: "1px solid rgba(220, 38, 38, 0.3)",
+                              color: "var(--color-sell)",
+                              fontSize: "12px",
+                              fontWeight: "800",
+                              cursor: "pointer",
+                              minHeight: "40px"
+                            }}
+                          >
+                            Sell
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenTrade(h.ticker, "BUY")}
+                            style={{
+                              padding: "8px",
+                              borderRadius: "8px",
+                              background: "rgba(5, 150, 105, 0.08)",
+                              border: "1px solid rgba(5, 150, 105, 0.3)",
+                              color: "var(--color-buy)",
+                              fontSize: "12px",
+                              fontWeight: "800",
+                              cursor: "pointer",
+                              minHeight: "40px"
+                            }}
+                          >
+                            + Buy
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* Pending Limit Futures Orders (If Any) */}
+            {(account?.pending_futures_orders?.length ?? 0) > 0 && (
+              <div style={{ marginTop: "12px", paddingTop: "14px", borderTop: "1px solid var(--border-subtle)" }}>
+                <h4 style={{ fontSize: "13px", fontWeight: "800", color: "var(--color-text-primary)", marginBottom: "8px" }}>
+                  ⏳ Pending Limit Futures Orders ({account?.pending_futures_orders?.length ?? 0})
+                </h4>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {account!.pending_futures_orders!.map((ord: PendingFuturesOrder) => {
+                    const isCancelling = cancellingIds.has(ord.id);
+                    return (
+                      <div
+                        key={ord.id}
+                        style={{
+                          padding: "10px 12px",
+                          borderRadius: "8px",
+                          background: "rgba(217, 119, 6, 0.06)",
+                          border: "1px solid rgba(217, 119, 6, 0.3)",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          gap: "8px",
+                          fontSize: "12px"
+                        }}
+                      >
+                        <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                            <strong style={{ color: "var(--color-text-primary)" }}>{ord.contract_symbol}</strong>
+                            <span style={{ fontSize: "10px", fontWeight: "800", color: ord.side === "BUY" ? "var(--color-buy)" : "var(--color-sell)" }}>
+                              {ord.side} LIMIT
+                            </span>
+                            <span style={{ fontSize: "10.5px", color: "var(--color-text-secondary)" }}>
+                              {ord.lots} lot(s) × {ord.lot_size} = {ord.total_quantity} sh
+                            </span>
+                          </div>
+                          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>
+                            Limit: <strong>₹{ord.limit_price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</strong> • Live FUT: ₹{ord.current_futures_price.toLocaleString("en-IN", { minimumFractionDigits: 2 })} • Margin Held: ₹{ord.margin_blocked.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={isCancelling}
+                          onClick={() => handleCancelPendingFutures(ord)}
+                          style={{
+                            padding: "5px 10px",
+                            borderRadius: "6px",
+                            background: "rgba(220, 38, 38, 0.08)",
+                            border: "1px solid var(--color-sell)",
+                            color: "var(--color-sell)",
+                            fontSize: "11px",
+                            fontWeight: "800",
+                            cursor: isCancelling ? "not-allowed" : "pointer"
+                          }}
+                        >
+                          {isCancelling ? "Cancelling..." : "Cancel Order"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Closed Futures Trades Summary (If Any) */}
+            {(account?.closed_futures_positions?.length ?? 0) > 0 && (
+              <div style={{ marginTop: "12px", paddingTop: "14px", borderTop: "1px solid var(--border-subtle)" }}>
+                <h4 style={{ fontSize: "13px", fontWeight: "800", color: "var(--color-text-primary)", marginBottom: "8px" }}>
+                  ✅ Recently Closed Futures ({account?.closed_futures_positions?.length ?? 0})
+                </h4>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "8px" }}>
+                  {account!.closed_futures_positions!.slice(0, 6).map((cp: ClosedFuturesPosition) => {
+                    const isGain = cp.realized_pnl >= 0;
+                    return (
+                      <div
+                        key={cp.id}
+                        style={{
+                          padding: "8px 10px",
+                          borderRadius: "8px",
+                          background: "rgba(0,0,0,0.02)",
+                          border: "1px solid var(--border-subtle)",
+                          fontSize: "11px",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: "8px"
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: "800", color: "var(--color-text-primary)" }}>
+                            {cp.contract_symbol} ({cp.side})
+                          </div>
+                          <div style={{ color: "var(--color-text-muted)", fontSize: "10px" }}>
+                            {cp.total_quantity.toLocaleString("en-IN")} sh • ₹{cp.entry_price.toFixed(2)} → ₹{cp.exit_price.toFixed(2)}
+                          </div>
+                        </div>
+                        <span style={{ fontWeight: "900", color: isGain ? "var(--color-buy)" : "var(--color-sell)", whiteSpace: "nowrap" }}>
+                          {isGain ? "+" : ""}₹{cp.realized_pnl.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
-                        <span style={{ fontSize: "10.5px", color: "var(--color-text-secondary)" }}>
-                          {ord.lots} lot(s) × {ord.lot_size} = {ord.total_quantity} sh
-                        </span>
                       </div>
-                      <div style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>
-                        Limit: <strong>₹{ord.limit_price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</strong> • Live FUT: ₹{ord.current_futures_price.toLocaleString("en-IN", { minimumFractionDigits: 2 })} • Margin Held: ₹{ord.margin_blocked.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={isCancelling}
-                      onClick={() => handleCancelPendingFutures(ord)}
-                      style={{
-                        padding: "5px 10px",
-                        borderRadius: "6px",
-                        background: "rgba(220, 38, 38, 0.08)",
-                        border: "1px solid var(--color-sell)",
-                        color: "var(--color-sell)",
-                        fontSize: "11px",
-                        fontWeight: "800",
-                        cursor: isCancelling ? "not-allowed" : "pointer"
-                      }}
-                    >
-                      {isCancelling ? "Cancelling..." : "Cancel Order"}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Closed Futures Trades Summary (If Any) */}
-        {(account?.closed_futures_positions?.length ?? 0) > 0 && (
-          <div style={{ marginTop: "16px", paddingTop: "14px", borderTop: "1px solid var(--border-subtle)" }}>
-            <h4 style={{ fontSize: "13px", fontWeight: "800", color: "var(--color-text-primary)", marginBottom: "8px" }}>
-              ✅ Recently Closed Futures ({account?.closed_futures_positions?.length ?? 0})
-            </h4>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "8px" }}>
-              {account!.closed_futures_positions!.slice(0, 6).map((cp: ClosedFuturesPosition) => {
-                const isGain = cp.realized_pnl >= 0;
-                return (
-                  <div
-                    key={cp.id}
-                    style={{
-                      padding: "8px 10px",
-                      borderRadius: "8px",
-                      background: "rgba(0,0,0,0.02)",
-                      border: "1px solid var(--border-subtle)",
-                      fontSize: "11px",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: "8px"
-                    }}
-                  >
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: "800", color: "var(--color-text-primary)" }}>
-                        {cp.contract_symbol} ({cp.side})
-                      </div>
-                      <div style={{ color: "var(--color-text-muted)", fontSize: "10px" }}>
-                        {cp.total_quantity.toLocaleString("en-IN")} sh • ₹{cp.entry_price.toFixed(2)} → ₹{cp.exit_price.toFixed(2)}
-                      </div>
-                    </div>
-                    <span style={{ fontWeight: "900", color: isGain ? "var(--color-buy)" : "var(--color-sell)", whiteSpace: "nowrap" }}>
-                      {isGain ? "+" : ""}₹{cp.realized_pnl.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1326,6 +1915,7 @@ export default function PaperTradingDashboard({ stocks, initialAccount, onAccoun
             ].map((f) => (
               <button
                 key={f.id}
+                type="button"
                 onClick={() => setTxFilter(f.id as any)}
                 style={{
                   fontSize: "11px",
